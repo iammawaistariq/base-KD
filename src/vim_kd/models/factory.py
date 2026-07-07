@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from typing import Any
+
+from torch import nn
+
+from .tiny_vit import TinyVisionTransformer
+from .vision_mamba import VisionMamba
+
+
+class TimmClassifier(nn.Module):
+    def __init__(self, timm_name: str, num_classes: int, pretrained: bool = True) -> None:
+        super().__init__()
+        import timm
+
+        self.model = timm.create_model(timm_name, pretrained=pretrained, num_classes=num_classes)
+
+    def forward(self, x, return_features: bool = False):
+        if return_features and hasattr(self.model, "forward_features"):
+            features_raw = self.model.forward_features(x)
+            if isinstance(features_raw, dict):
+                tokens = features_raw.get("x", None)
+                if tokens is None:
+                    tokens = features_raw.get("tokens", None)
+                if tokens is None:
+                    raise ValueError("Could not find token tensor in timm feature dict.")
+            elif isinstance(features_raw, (tuple, list)):
+                tokens = features_raw[-1]
+            else:
+                tokens = features_raw
+            if tokens.ndim == 4:
+                tokens = tokens.flatten(2).transpose(1, 2)
+            cls = tokens[:, 0] if tokens.ndim == 3 else tokens
+            logits = self.model(x)
+            return logits, {"tokens": tokens, "cls": cls, "patch_tokens": tokens[:, 1:]}
+        return self.model(x)
+
+
+def build_model(cfg: dict[str, Any], dataset_cfg: dict[str, Any]):
+    name = cfg["name"].lower()
+    num_classes = int(dataset_cfg["num_classes"])
+    img_size = int(dataset_cfg.get("image_size", 224))
+    common = {"img_size": img_size, "num_classes": num_classes}
+
+    if name == "tiny_vit":
+        keys = ["patch_size", "embed_dim", "depth", "num_heads", "mlp_ratio", "drop_rate"]
+        return TinyVisionTransformer(**common, **{k: cfg[k] for k in keys if k in cfg})
+    if name == "vision_mamba":
+        keys = [
+            "patch_size",
+            "embed_dim",
+            "depth",
+            "state_dim",
+            "conv_kernel",
+            "expand",
+            "bidirectional",
+            "drop_rate",
+        ]
+        return VisionMamba(**common, **{k: cfg[k] for k in keys if k in cfg})
+    if name == "timm":
+        return TimmClassifier(cfg["timm_name"], num_classes=num_classes, pretrained=cfg.get("pretrained", True))
+    raise ValueError(f"Unknown model name: {name}")

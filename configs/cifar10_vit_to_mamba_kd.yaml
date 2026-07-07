@@ -1,0 +1,49 @@
+run_name: cifar10_vit_to_mamba_kd
+seed: 42
+device: auto
+output_dir: runs/cifar10_vit_to_mamba_kd
+
+dataset:
+  name: cifar10
+  root: data
+  image_size: 224
+  batch_size: 64
+  num_workers: 4
+  num_classes: 10
+
+teacher:
+  name: tiny_vit
+  checkpoint: runs/cifar10_teacher_vit/best.pt
+  patch_size: 16
+  embed_dim: 192
+  depth: 6
+  num_heads: 3
+  mlp_ratio: 4.0
+  drop_rate: 0.0
+
+student:
+  name: vision_mamba
+  patch_size: 16
+  embed_dim: 128
+  depth: 8
+  state_dim: 16
+  conv_kernel: 3
+  expand: 2
+  bidirectional: true
+  drop_rate: 0.0
+
+train:
+  epochs: 80
+  lr: 0.0008
+  weight_decay: 0.05
+  warmup_epochs: 5
+  amp: true
+  grad_clip_norm: 1.0
+
+distillation:
+  enabled: true
+  temperature: 4.0
+  ce_weight: 0.4
+  kd_weight: 0.6
+  feature_weight: 0.15
+  relation_weight: 0.05

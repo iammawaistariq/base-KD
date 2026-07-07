@@ -1,0 +1,33 @@
+run_name: cifar10_teacher_vit
+seed: 42
+device: auto
+output_dir: runs/cifar10_teacher_vit
+
+dataset:
+  name: cifar10
+  root: data
+  image_size: 224
+  batch_size: 64
+  num_workers: 4
+  num_classes: 10
+
+model:
+  role: teacher
+  name: tiny_vit
+  patch_size: 16
+  embed_dim: 192
+  depth: 6
+  num_heads: 3
+  mlp_ratio: 4.0
+  drop_rate: 0.0
+
+train:
+  epochs: 50
+  lr: 0.0005
+  weight_decay: 0.05
+  warmup_epochs: 5
+  amp: true
+  grad_clip_norm: 1.0
+
+distillation:
+  enabled: false

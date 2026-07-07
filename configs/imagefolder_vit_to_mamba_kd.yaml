@@ -1,0 +1,46 @@
+run_name: imagefolder_vit_to_mamba_kd
+seed: 42
+device: auto
+output_dir: runs/imagefolder_vit_to_mamba_kd
+
+dataset:
+  name: imagefolder
+  train_dir: /path/to/train
+  val_dir: /path/to/val
+  image_size: 224
+  batch_size: 32
+  num_workers: 4
+  num_classes: 100
+
+teacher:
+  name: timm
+  timm_name: vit_base_patch16_224
+  pretrained: true
+  checkpoint: null
+
+student:
+  name: vision_mamba
+  patch_size: 16
+  embed_dim: 192
+  depth: 12
+  state_dim: 16
+  conv_kernel: 3
+  expand: 2
+  bidirectional: true
+  drop_rate: 0.0
+
+train:
+  epochs: 100
+  lr: 0.0005
+  weight_decay: 0.05
+  warmup_epochs: 5
+  amp: true
+  grad_clip_norm: 1.0
+
+distillation:
+  enabled: true
+  temperature: 4.0
+  ce_weight: 0.3
+  kd_weight: 0.7
+  feature_weight: 0.1
+  relation_weight: 0.05
