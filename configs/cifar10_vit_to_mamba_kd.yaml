@@ -6,8 +6,10 @@ output_dir: runs/cifar10_vit_to_mamba_kd
 dataset:
   name: cifar10
   root: data
+  download: true
   image_size: 224
-  batch_size: 64
+  batch_size: 8
+  eval_batch_size: 32
   num_workers: 4
   num_classes: 10
 

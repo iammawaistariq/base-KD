@@ -26,6 +26,17 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+The CIFAR configs download the real torchvision datasets into `data/` by
+default. For your own data, use the ImageFolder config layout:
+
+```text
+dataset_root/
+  train/class_a/*.jpg
+  train/class_b/*.jpg
+  val/class_a/*.jpg
+  val/class_b/*.jpg
+```
+
 ## Quick Start
 
 Train a ViT teacher first:

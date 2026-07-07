@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,10 @@ from vim_kd.models.factory import build_model
 from vim_kd.utils.checkpoint import load_model_checkpoint, save_checkpoint
 from vim_kd.utils.metrics import AverageMeter, accuracy, evaluate_classifier
 from vim_kd.utils.seed import resolve_device, set_seed
+
+
+def log_step(message: str) -> None:
+    print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
 def build_student_or_teacher(cfg: dict[str, Any]) -> nn.Module:
@@ -47,7 +52,10 @@ def _load_optional_checkpoint(model: nn.Module, cfg: dict[str, Any], device: tor
         load_model_checkpoint(model, checkpoint, map_location=device)
 
 
-def _match_token_count(student: torch.Tensor, teacher: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+def _match_token_count(
+    student: torch.Tensor,
+    teacher: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     if student.shape[1] == teacher.shape[1]:
         return student, teacher
     n = min(student.shape[1], teacher.shape[1])
@@ -61,7 +69,9 @@ def _train_teacher_epoch(
     loss_meter = AverageMeter()
     acc_meter = AverageMeter()
     progress = tqdm(loader, desc=f"train {epoch}/{epochs}", dynamic_ncols=True)
-    for images, labels in progress:
+    for step, (images, labels) in enumerate(progress, start=1):
+        if step == 1:
+            log_step(f"train: first batch loaded shape={tuple(images.shape)}")
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad(set_to_none=True)
         with autocast(enabled=amp):
@@ -99,7 +109,9 @@ def _train_kd_epoch(
     meters = {name: AverageMeter() for name in ["loss", "acc1", "ce", "kd", "feature", "relation"]}
 
     progress = tqdm(loader, desc=f"distill {epoch}/{epochs}", dynamic_ncols=True)
-    for images, labels in progress:
+    for step, (images, labels) in enumerate(progress, start=1):
+        if step == 1:
+            log_step(f"distill: first batch loaded shape={tuple(images.shape)}")
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad(set_to_none=True)
         with torch.no_grad(), autocast(enabled=amp):
@@ -114,7 +126,10 @@ def _train_kd_epoch(
         scaler.scale(loss).backward()
         if grad_clip_norm:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(list(student.parameters()) + list(adapter.parameters()), grad_clip_norm)
+            torch.nn.utils.clip_grad_norm_(
+                list(student.parameters()) + list(adapter.parameters()),
+                grad_clip_norm,
+            )
         scaler.step(optimizer)
         scaler.update()
         acc1 = accuracy(student_logits, labels, topk=(1,))[0]
@@ -130,6 +145,17 @@ def _train_kd_epoch(
     return {key: meter.avg for key, meter in meters.items()}
 
 
+def _raise_with_oom_hint(exc: torch.OutOfMemoryError, cfg: dict[str, Any]) -> None:
+    batch_size = cfg["dataset"].get("batch_size", 64)
+    image_size = cfg["dataset"].get("image_size", 224)
+    raise RuntimeError(
+        "CUDA ran out of memory. For this pure PyTorch Vision-Mamba KD baseline, lower "
+        "`dataset.batch_size` first, then `dataset.image_size` only if you are willing to "
+        "retrain the teacher with the same image size. Current values: "
+        f"batch_size={batch_size}, image_size={image_size}."
+    ) from exc
+
+
 def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     set_seed(int(cfg.get("seed", 42)))
     torch.set_float32_matmul_precision("high")
@@ -138,19 +164,19 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     run_name = cfg.get("run_name", output_dir.name)
-    print(f"Starting run: {run_name}", flush=True)
-    print(f"Device: {device}", flush=True)
-    print(f"Output dir: {output_dir}", flush=True)
-    print(
+    log_step(f"Starting run: {run_name}")
+    log_step(f"Device: {device}")
+    log_step(f"Output dir: {output_dir}")
+    log_step(
         "Building dataloaders "
         f"dataset={cfg['dataset']['name']} image_size={cfg['dataset'].get('image_size', 224)} "
-        f"batch_size={cfg['dataset'].get('batch_size', 64)}",
-        flush=True,
+        f"batch_size={cfg['dataset'].get('batch_size', 64)}"
     )
-    train_loader, val_loader = build_dataloaders(cfg["dataset"])
-    print(
-        f"Data ready: train_batches={len(train_loader)} val_batches={len(val_loader)}",
-        flush=True,
+    data_start = time.perf_counter()
+    train_loader, val_loader = build_dataloaders(cfg["dataset"], logger=log_step)
+    log_step(
+        f"Data ready: train_batches={len(train_loader)} val_batches={len(val_loader)} "
+        f"({time.perf_counter() - data_start:.1f}s)"
     )
     amp = bool(cfg["train"].get("amp", True)) and device.type == "cuda"
     scaler = GradScaler(enabled=amp)
@@ -158,13 +184,14 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     start_epoch = 0
 
     if cfg.get("distillation", {}).get("enabled", False):
-        print("Building student, teacher, and feature adapter for distillation", flush=True)
+        log_step("Building student, teacher, and feature adapter for distillation")
         student = build_model(cfg["student"], cfg["dataset"]).to(device)
         teacher = build_model(cfg["teacher"], cfg["dataset"]).to(device)
         _load_optional_checkpoint(teacher, cfg["teacher"], device)
         teacher.requires_grad_(False)
         teacher.eval()
         with torch.no_grad():
+            log_step("Probing one batch to size the feature adapter")
             sample = next(iter(train_loader))[0][:1].to(device)
             _, sf = student(sample, return_features=True)
             _, tf = teacher(sample, return_features=True)
@@ -176,7 +203,7 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
         parameters = list(student.parameters()) + list(adapter.parameters())
         model_for_eval = student
     else:
-        print(f"Building model: {cfg['model']['name']}", flush=True)
+        log_step(f"Building model: {cfg['model']['name']}")
         student = build_model(cfg["model"], cfg["dataset"]).to(device)
         teacher = None
         adapter = None
@@ -191,14 +218,19 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     )
 
     if resume:
+        log_step(f"Loading resume checkpoint: {resume}")
         state = torch.load(resume, map_location=device)
         model_for_eval.load_state_dict(state["model"])
+        if adapter is not None:
+            adapter_state = state.get("extra", {}).get("adapter")
+            if adapter_state is not None:
+                adapter.load_state_dict(adapter_state)
         optimizer.load_state_dict(state["optimizer"])
         start_epoch = int(state.get("epoch", -1)) + 1
         best_acc = float(state.get("best_acc", 0.0))
 
     epochs = int(cfg["train"]["epochs"])
-    print(f"Training for {epochs - start_epoch} epoch(s), amp={amp}", flush=True)
+    log_step(f"Training for {epochs - start_epoch} epoch(s), amp={amp}")
     for epoch in range(start_epoch, epochs):
         lr = _cosine_scheduler(
             float(cfg["train"]["lr"]),
@@ -209,35 +241,43 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
         )
         for group in optimizer.param_groups:
             group["lr"] = lr
+        log_step(f"Epoch {epoch + 1}/{epochs} started lr={lr:.2e}")
 
         if teacher is None:
-            train_metrics = _train_teacher_epoch(
-                student,
-                train_loader,
-                optimizer,
-                scaler,
-                device,
-                amp,
-                cfg["train"].get("grad_clip_norm"),
-                epoch + 1,
-                epochs,
-            )
+            try:
+                train_metrics = _train_teacher_epoch(
+                    student,
+                    train_loader,
+                    optimizer,
+                    scaler,
+                    device,
+                    amp,
+                    cfg["train"].get("grad_clip_norm"),
+                    epoch + 1,
+                    epochs,
+                )
+            except torch.OutOfMemoryError as exc:
+                _raise_with_oom_hint(exc, cfg)
         else:
-            train_metrics = _train_kd_epoch(
-                student,
-                teacher,
-                adapter,
-                train_loader,
-                optimizer,
-                criterion,
-                scaler,
-                device,
-                amp,
-                cfg["train"].get("grad_clip_norm"),
-                epoch + 1,
-                epochs,
-            )
+            try:
+                train_metrics = _train_kd_epoch(
+                    student,
+                    teacher,
+                    adapter,
+                    train_loader,
+                    optimizer,
+                    criterion,
+                    scaler,
+                    device,
+                    amp,
+                    cfg["train"].get("grad_clip_norm"),
+                    epoch + 1,
+                    epochs,
+                )
+            except torch.OutOfMemoryError as exc:
+                _raise_with_oom_hint(exc, cfg)
 
+        log_step(f"Epoch {epoch + 1}/{epochs}: evaluating validation split")
         val_metrics = evaluate_classifier(model_for_eval, val_loader, device)
         is_best = val_metrics["acc1"] > best_acc
         best_acc = max(best_acc, val_metrics["acc1"])
@@ -258,10 +298,9 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
                 best_acc=best_acc,
                 extra={"adapter": adapter.state_dict() if adapter is not None else None},
             )
-        print(
+        log_step(
             f"epoch={epoch + 1}/{epochs} lr={lr:.2e} "
             f"train_loss={train_metrics['loss']:.4f} train_acc1={train_metrics['acc1']:.2f} "
             f"val_loss={val_metrics['loss']:.4f} val_acc1={val_metrics['acc1']:.2f} "
-            f"best={best_acc:.2f}",
-            flush=True,
+            f"best={best_acc:.2f}"
         )

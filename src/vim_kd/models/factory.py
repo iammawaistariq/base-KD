@@ -30,7 +30,11 @@ class TimmClassifier(nn.Module):
                 tokens = features_raw
             if tokens.ndim == 4:
                 tokens = tokens.flatten(2).transpose(1, 2)
-            cls = tokens[:, 0] if tokens.ndim == 3 else tokens
+            if tokens.ndim == 2:
+                tokens = tokens.unsqueeze(1)
+            if tokens.ndim != 3:
+                raise ValueError(f"Expected timm features to be rank 2, 3, or 4; got {tokens.shape}.")
+            cls = tokens[:, 0]
             logits = self.model(x)
             return logits, {"tokens": tokens, "cls": cls, "patch_tokens": tokens[:, 1:]}
         return self.model(x)
