@@ -20,13 +20,14 @@ teacher:
 
 student:
   name: vision_mamba
+  mamba_backend: auto
   patch_size: 16
   embed_dim: 192
   depth: 12
   state_dim: 16
   conv_kernel: 3
   expand: 2
-  bidirectional: true
+  bidirectional: false
   drop_rate: 0.0
 
 train:
@@ -43,4 +44,4 @@ distillation:
   ce_weight: 0.3
   kd_weight: 0.7
   feature_weight: 0.1
-  relation_weight: 0.05
+  relation_weight: 0.0

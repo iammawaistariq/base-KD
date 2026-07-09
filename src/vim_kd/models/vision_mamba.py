@@ -3,8 +3,16 @@ from __future__ import annotations
 import torch
 from torch import nn
 from torch.nn import functional as F
+import inspect
 
 from .layers import DropPath, RMSNorm
+
+try:
+    from mamba_ssm import Mamba as SsmMamba
+    MAMBA_SSM_IMPORT_ERROR = None
+except Exception as exc:  # pragma: no cover - optional acceleration dependency
+    SsmMamba = None
+    MAMBA_SSM_IMPORT_ERROR = exc
 
 
 class PatchEmbed(nn.Module):
@@ -18,7 +26,7 @@ class PatchEmbed(nn.Module):
         return self.proj(x).flatten(2).transpose(1, 2)
 
 
-class MambaMixer(nn.Module):
+class TorchMambaMixer(nn.Module):
     """Readable PyTorch selective state-space mixer for vision tokens.
 
     This mirrors the Mamba idea: input-dependent B/C/dt parameters, a stable
@@ -74,6 +82,43 @@ class MambaMixer(nn.Module):
         return self.out_proj(y)
 
 
+class SsmMambaMixer(nn.Module):
+    """Optimized Mamba mixer backed by the mamba-ssm package."""
+
+    def __init__(self, dim: int, state_dim: int = 16, conv_kernel: int = 3, expand: int = 2) -> None:
+        super().__init__()
+        if SsmMamba is None:
+            reason = f" Import failed with: {MAMBA_SSM_IMPORT_ERROR}" if MAMBA_SSM_IMPORT_ERROR else ""
+            raise ImportError(
+                "mamba-ssm is not installed or could not be imported."
+                f"{reason} Install/fix it or set student.mamba_backend='pytorch'."
+            )
+        kwargs = {"d_model": dim, "d_state": state_dim, "d_conv": conv_kernel, "expand": expand}
+        if "use_fast_path" in inspect.signature(SsmMamba).parameters:
+            kwargs["use_fast_path"] = False
+        self.mixer = SsmMamba(**kwargs)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.mixer(x)
+
+
+def build_mamba_mixer(
+    dim: int,
+    state_dim: int,
+    conv_kernel: int,
+    expand: int,
+    backend: str,
+) -> nn.Module:
+    backend = backend.lower()
+    if backend == "auto":
+        backend = "mamba_ssm" if SsmMamba is not None else "pytorch"
+    if backend == "mamba_ssm":
+        return SsmMambaMixer(dim, state_dim, conv_kernel, expand)
+    if backend == "pytorch":
+        return TorchMambaMixer(dim, state_dim, conv_kernel, expand)
+    raise ValueError("student.mamba_backend must be one of: auto, mamba_ssm, pytorch")
+
+
 class VisionMambaBlock(nn.Module):
     def __init__(
         self,
@@ -83,11 +128,16 @@ class VisionMambaBlock(nn.Module):
         expand: int,
         bidirectional: bool,
         drop_path: float,
+        mamba_backend: str,
     ) -> None:
         super().__init__()
         self.norm = RMSNorm(dim)
-        self.forward_mixer = MambaMixer(dim, state_dim, conv_kernel, expand)
-        self.backward_mixer = MambaMixer(dim, state_dim, conv_kernel, expand) if bidirectional else None
+        self.forward_mixer = build_mamba_mixer(dim, state_dim, conv_kernel, expand, mamba_backend)
+        self.backward_mixer = (
+            build_mamba_mixer(dim, state_dim, conv_kernel, expand, mamba_backend)
+            if bidirectional
+            else None
+        )
         self.drop_path = DropPath(drop_path)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -110,8 +160,9 @@ class VisionMamba(nn.Module):
         state_dim: int = 16,
         conv_kernel: int = 3,
         expand: int = 2,
-        bidirectional: bool = True,
+        bidirectional: bool = False,
         drop_rate: float = 0.0,
+        mamba_backend: str = "auto",
     ) -> None:
         super().__init__()
         self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
@@ -122,7 +173,13 @@ class VisionMamba(nn.Module):
         self.blocks = nn.ModuleList(
             [
                 VisionMambaBlock(
-                    embed_dim, state_dim, conv_kernel, expand, bidirectional, drop_path=dpr[i]
+                    embed_dim,
+                    state_dim,
+                    conv_kernel,
+                    expand,
+                    bidirectional,
+                    drop_path=dpr[i],
+                    mamba_backend=mamba_backend,
                 )
                 for i in range(depth)
             ]
