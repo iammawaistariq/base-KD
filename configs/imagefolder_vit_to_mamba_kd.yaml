@@ -28,6 +28,7 @@ student:
   conv_kernel: 3
   expand: 2
   bidirectional: false
+  pool: mean
   drop_rate: 0.0
 
 train:

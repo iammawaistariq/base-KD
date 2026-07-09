@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import inspect
+
 import torch
 from torch import nn
 from torch.nn import functional as F
-import inspect
 
 from .layers import DropPath, RMSNorm
 
@@ -163,8 +164,12 @@ class VisionMamba(nn.Module):
         bidirectional: bool = False,
         drop_rate: float = 0.0,
         mamba_backend: str = "auto",
+        pool: str = "mean",
     ) -> None:
         super().__init__()
+        if pool not in {"mean", "cls"}:
+            raise ValueError("VisionMamba pool must be one of: mean, cls")
+        self.pool = pool
         self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, self.patch_embed.num_patches + 1, embed_dim))
@@ -205,9 +210,14 @@ class VisionMamba(nn.Module):
             "layer_tokens": layer_tokens,
         }
 
+    def _pool_features(self, features: dict[str, torch.Tensor]) -> torch.Tensor:
+        if self.pool == "mean":
+            return features["patch_tokens"].mean(dim=1)
+        return features["cls"]
+
     def forward(self, x: torch.Tensor, return_features: bool = False):
         features = self.forward_features(x)
-        logits = self.head(features["cls"])
+        logits = self.head(self._pool_features(features))
         if return_features:
             return logits, features
         return logits
