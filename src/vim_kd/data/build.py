@@ -110,14 +110,19 @@ def _build_transforms(dataset_name: str, image_size: int, train: bool):
     mean, std = CIFAR_MEAN_STD.get(dataset_name, (IMAGENET_MEAN, IMAGENET_STD))
 
     if train:
-        return transforms.Compose(
-            [
-                transforms.RandomResizedCrop(image_size, scale=(0.65, 1.0), ratio=(0.85, 1.15)),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                transforms.Normalize(mean, std),
-            ]
-        )
+        ops = [
+            transforms.RandomResizedCrop(image_size, scale=(0.65, 1.0), ratio=(0.85, 1.15)),
+            transforms.RandomHorizontalFlip(),
+        ]
+        # Apply stronger augmentation for CIFAR datasets (RandAugment)
+        if dataset_name in {"cifar10", "cifar100"}:
+            try:
+                ops.insert(0, transforms.RandAugment(num_ops=2, magnitude=9))
+            except Exception:
+                # Fall back silently if torchvision version lacks RandAugment
+                pass
+        ops += [transforms.ToTensor(), transforms.Normalize(mean, std)]
+        return transforms.Compose(ops)
 
     resize_size = max(image_size, int(round(image_size / 0.875)))
     return transforms.Compose(
