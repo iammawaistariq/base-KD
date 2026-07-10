@@ -96,7 +96,7 @@ class SsmMambaMixer(nn.Module):
             )
         kwargs = {"d_model": dim, "d_state": state_dim, "d_conv": conv_kernel, "expand": expand}
         if "use_fast_path" in inspect.signature(SsmMamba).parameters:
-            kwargs["use_fast_path"] = False
+            kwargs["use_fast_path"] = True
         self.mixer = SsmMamba(**kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

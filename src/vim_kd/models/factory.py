@@ -15,6 +15,11 @@ class TimmClassifier(nn.Module):
 
         self.model = timm.create_model(timm_name, pretrained=pretrained, num_classes=num_classes)
 
+    def _logits_from_features(self, features_raw, x):
+        if hasattr(self.model, "forward_head"):
+            return self.model.forward_head(features_raw)
+        return self.model(x)
+
     def forward(self, x, return_features: bool = False):
         if return_features and hasattr(self.model, "forward_features"):
             features_raw = self.model.forward_features(x)
@@ -35,7 +40,7 @@ class TimmClassifier(nn.Module):
             if tokens.ndim != 3:
                 raise ValueError(f"Expected timm features to be rank 2, 3, or 4; got {tokens.shape}.")
             cls = tokens[:, 0]
-            logits = self.model(x)
+            logits = self._logits_from_features(features_raw, x)
             return logits, {"tokens": tokens, "cls": cls, "patch_tokens": tokens[:, 1:]}
         return self.model(x)
 

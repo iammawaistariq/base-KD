@@ -59,6 +59,14 @@ def _load_optional_checkpoint(model: nn.Module, cfg: dict[str, Any], device: tor
         load_model_checkpoint(model, checkpoint, map_location=device)
 
 
+def _describe_mamba_backend(model: nn.Module) -> str | None:
+    for module in model.modules():
+        name = module.__class__.__name__
+        if name in {"SsmMambaMixer", "TorchMambaMixer"}:
+            return name
+    return None
+
+
 def _match_token_count(
     student: torch.Tensor,
     teacher: torch.Tensor,
@@ -76,10 +84,12 @@ def _train_teacher_epoch(
     loss_meter = AverageMeter()
     acc_meter = AverageMeter()
     progress = tqdm(loader, desc=f"train {epoch}/{epochs}", dynamic_ncols=True)
+    non_blocking = device.type == "cuda"
     for step, (images, labels) in enumerate(progress, start=1):
         if step == 1:
             log_step(f"train: first batch loaded shape={tuple(images.shape)}")
-        images, labels = images.to(device), labels.to(device)
+        images = images.to(device, non_blocking=non_blocking)
+        labels = labels.to(device, non_blocking=non_blocking)
         optimizer.zero_grad(set_to_none=True)
         with autocast(enabled=amp):
             logits = model(images)
@@ -117,10 +127,12 @@ def _train_kd_epoch(
     meters = {name: AverageMeter() for name in ["loss", "acc1", "ce", "kd", "feature", "relation"]}
 
     progress = tqdm(loader, desc=f"distill {epoch}/{epochs}", dynamic_ncols=True)
+    non_blocking = device.type == "cuda"
     for step, (images, labels) in enumerate(progress, start=1):
         if step == 1:
             log_step(f"distill: first batch loaded shape={tuple(images.shape)}")
-        images, labels = images.to(device), labels.to(device)
+        images = images.to(device, non_blocking=non_blocking)
+        labels = labels.to(device, non_blocking=non_blocking)
         optimizer.zero_grad(set_to_none=True)
         with torch.no_grad(), autocast(enabled=amp):
             teacher_out = teacher(images, return_features=use_token_distillation)
@@ -179,6 +191,8 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     set_seed(int(cfg.get("seed", 42)))
     torch.set_float32_matmul_precision("high")
     device = resolve_device(cfg.get("device", "auto"))
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
     output_dir = Path(cfg.get("output_dir", "runs/default"))
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -206,6 +220,9 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
         log_step("Building student and teacher for distillation")
         student = build_model(cfg["student"], cfg["dataset"]).to(device)
         teacher = build_model(cfg["teacher"], cfg["dataset"]).to(device)
+        backend = _describe_mamba_backend(student)
+        if backend is not None:
+            log_step(f"Student Mamba backend: {backend}")
         _load_optional_checkpoint(teacher, cfg["teacher"], device)
         teacher.requires_grad_(False)
         teacher.eval()
@@ -229,6 +246,9 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     else:
         log_step(f"Building model: {cfg['model']['name']}")
         student = build_model(cfg["model"], cfg["dataset"]).to(device)
+        backend = _describe_mamba_backend(student)
+        if backend is not None:
+            log_step(f"Student Mamba backend: {backend}")
         teacher = None
         adapter = None
         criterion = None
@@ -236,11 +256,17 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
         parameters = student.parameters()
         model_for_eval = student
 
-    optimizer = torch.optim.AdamW(
-        parameters,
-        lr=float(cfg["train"]["lr"]),
-        weight_decay=float(cfg["train"].get("weight_decay", 0.05)),
-    )
+    optimizer_kwargs = {
+        "lr": float(cfg["train"]["lr"]),
+        "weight_decay": float(cfg["train"].get("weight_decay", 0.05)),
+    }
+    if device.type == "cuda":
+        optimizer_kwargs["fused"] = True
+    try:
+        optimizer = torch.optim.AdamW(parameters, **optimizer_kwargs)
+    except TypeError:
+        optimizer_kwargs.pop("fused", None)
+        optimizer = torch.optim.AdamW(parameters, **optimizer_kwargs)
 
     if resume:
         log_step(f"Loading resume checkpoint: {resume}")

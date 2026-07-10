@@ -8,8 +8,8 @@ dataset:
   root: data
   download: true
   image_size: 224
-  batch_size: 32
-  eval_batch_size: 32
+  batch_size: 64
+  eval_batch_size: 64
   num_workers: 4
   num_classes: 10
 
