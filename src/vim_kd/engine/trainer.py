@@ -39,6 +39,13 @@ class FeatureAdapter(nn.Module):
         return self.proj(x)
 
 
+def _distillation_uses_tokens(cfg: dict[str, Any]) -> bool:
+    return (
+        float(cfg.get("feature_weight", 0.0)) > 0.0
+        or float(cfg.get("relation_weight", 0.0)) > 0.0
+    )
+
+
 def _cosine_scheduler(base_lr: float, min_lr: float, epoch: int, total: int, warmup: int) -> float:
     if epoch < warmup:
         return base_lr * float(epoch + 1) / max(1, warmup)
@@ -103,6 +110,7 @@ def _train_kd_epoch(
     grad_clip_norm,
     epoch: int,
     epochs: int,
+    use_token_distillation: bool,
 ) -> dict[str, float]:
     student.train()
     teacher.eval()
@@ -115,21 +123,32 @@ def _train_kd_epoch(
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad(set_to_none=True)
         with torch.no_grad(), autocast(enabled=amp):
-            teacher_logits, teacher_features = teacher(images, return_features=True)
+            teacher_out = teacher(images, return_features=use_token_distillation)
+            if use_token_distillation:
+                teacher_logits, teacher_features = teacher_out
+            else:
+                teacher_logits = teacher_out
+                teacher_features = None
         with autocast(enabled=amp):
-            student_logits, student_features = student(images, return_features=True)
-            s_tokens, t_tokens = _match_token_count(
-                student_features["tokens"], teacher_features["tokens"]
-            )
-            s_tokens = adapter(s_tokens)
+            student_out = student(images, return_features=use_token_distillation)
+            if use_token_distillation:
+                student_logits, student_features = student_out
+                s_tokens, t_tokens = _match_token_count(
+                    student_features["tokens"], teacher_features["tokens"]
+                )
+                s_tokens = adapter(s_tokens)
+            else:
+                student_logits = student_out
+                s_tokens = None
+                t_tokens = None
             loss, parts = criterion(student_logits, teacher_logits, labels, s_tokens, t_tokens)
         scaler.scale(loss).backward()
         if grad_clip_norm:
             scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(
-                list(student.parameters()) + list(adapter.parameters()),
-                grad_clip_norm,
-            )
+            parameters = list(student.parameters())
+            if use_token_distillation:
+                parameters += list(adapter.parameters())
+            torch.nn.utils.clip_grad_norm_(parameters, grad_clip_norm)
         scaler.step(optimizer)
         scaler.update()
         acc1 = accuracy(student_logits, labels, topk=(1,))[0]
@@ -184,23 +203,28 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
     start_epoch = 0
 
     if cfg.get("distillation", {}).get("enabled", False):
-        log_step("Building student, teacher, and feature adapter for distillation")
+        log_step("Building student and teacher for distillation")
         student = build_model(cfg["student"], cfg["dataset"]).to(device)
         teacher = build_model(cfg["teacher"], cfg["dataset"]).to(device)
         _load_optional_checkpoint(teacher, cfg["teacher"], device)
         teacher.requires_grad_(False)
         teacher.eval()
-        with torch.no_grad():
-            log_step("Probing one batch to size the feature adapter")
-            sample = next(iter(train_loader))[0][:1].to(device)
-            _, sf = student(sample, return_features=True)
-            _, tf = teacher(sample, return_features=True)
-        adapter = FeatureAdapter(sf["tokens"].shape[-1], tf["tokens"].shape[-1]).to(device)
         distill_cfg = {
             key: value for key, value in cfg["distillation"].items() if key != "enabled"
         }
+        use_token_distillation = _distillation_uses_tokens(distill_cfg)
+        adapter = None
+        if use_token_distillation:
+            with torch.no_grad():
+                log_step("Probing one batch to size the feature adapter")
+                sample = next(iter(train_loader))[0][:1].to(device)
+                _, sf = student(sample, return_features=True)
+                _, tf = teacher(sample, return_features=True)
+            adapter = FeatureAdapter(sf["tokens"].shape[-1], tf["tokens"].shape[-1]).to(device)
         criterion = DistillationCriterion(**distill_cfg)
-        parameters = list(student.parameters()) + list(adapter.parameters())
+        parameters = list(student.parameters())
+        if use_token_distillation:
+            parameters += list(adapter.parameters())
         model_for_eval = student
     else:
         log_step(f"Building model: {cfg['model']['name']}")
@@ -208,6 +232,7 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
         teacher = None
         adapter = None
         criterion = None
+        use_token_distillation = False
         parameters = student.parameters()
         model_for_eval = student
 
@@ -273,6 +298,7 @@ def train_from_config(cfg: dict[str, Any], resume: str | None = None) -> None:
                     cfg["train"].get("grad_clip_norm"),
                     epoch + 1,
                     epochs,
+                    use_token_distillation,
                 )
             except torch.OutOfMemoryError as exc:
                 _raise_with_oom_hint(exc, cfg)

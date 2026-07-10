@@ -1,7 +1,7 @@
-run_name: cifar10_vit_to_mamba_kd
+run_name: cifar10_mamba
 seed: 42
 device: auto
-output_dir: runs/cifar10_vit_to_mamba_kd
+output_dir: runs/cifar10_mamba
 
 dataset:
   name: cifar10
@@ -13,17 +13,7 @@ dataset:
   num_workers: 4
   num_classes: 10
 
-teacher:
-  name: tiny_vit
-  checkpoint: runs/cifar10_teacher_vit/best.pt
-  patch_size: 16
-  embed_dim: 192
-  depth: 6
-  num_heads: 3
-  mlp_ratio: 4.0
-  drop_rate: 0.0
-
-student:
+model:
   name: vision_mamba
   mamba_backend: auto
   patch_size: 16
@@ -45,9 +35,4 @@ train:
   grad_clip_norm: 1.0
 
 distillation:
-  enabled: true
-  temperature: 4.0
-  ce_weight: 0.4
-  kd_weight: 0.6
-  feature_weight: 0.05
-  relation_weight: 0.0
+  enabled: false

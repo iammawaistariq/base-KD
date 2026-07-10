@@ -59,6 +59,8 @@ def build_model(cfg: dict[str, Any], dataset_cfg: dict[str, Any]):
             "expand",
             "bidirectional",
             "drop_rate",
+            "mamba_backend",
+            "pool",
         ]
         return VisionMamba(**common, **{k: cfg[k] for k in keys if k in cfg})
     if name == "timm":
