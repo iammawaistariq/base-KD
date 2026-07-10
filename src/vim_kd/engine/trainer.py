@@ -63,6 +63,12 @@ def _describe_mamba_backend(model: nn.Module) -> str | None:
     for module in model.modules():
         name = module.__class__.__name__
         if name in {"SsmMambaMixer", "TorchMambaMixer"}:
+            use_fast_path = getattr(module, "use_fast_path", None)
+            mixer = getattr(module, "mixer", None)
+            if use_fast_path is None:
+                use_fast_path = getattr(mixer, "use_fast_path", None)
+            if use_fast_path is not None:
+                return f"{name}(use_fast_path={use_fast_path})"
             return name
     return None
 

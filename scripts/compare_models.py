@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 
@@ -17,7 +20,11 @@ from vim_kd.utils.seed import resolve_device
 DEFAULT_RUNS = [
     ("teacher", "configs/cifar10_teacher_vit.yaml", "runs/cifar10_teacher_vit/best.pt"),
     ("mamba", "configs/cifar10_mamba.yaml", "runs/cifar10_mamba/best.pt"),
-    ("mamba_kd", "configs/cifar10_vit_to_mamba_kd.yaml", "runs/cifar10_vit_to_mamba_kd/best.pt"),
+    (
+        "mamba_kd",
+        "configs/cifar10_vit_to_mamba_kd.yaml",
+        "runs/cifar10_timm_vit_to_mamba_kd/best.pt",
+    ),
 ]
 
 

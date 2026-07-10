@@ -15,6 +15,13 @@ except Exception as exc:  # pragma: no cover - optional acceleration dependency
     SsmMamba = None
     MAMBA_SSM_IMPORT_ERROR = exc
 
+try:
+    from mamba_ssm.ops.selective_scan_interface import causal_conv1d_fwd_function
+
+    CAUSAL_CONV1D_AVAILABLE = causal_conv1d_fwd_function is not None
+except Exception:  # pragma: no cover - optional acceleration dependency
+    CAUSAL_CONV1D_AVAILABLE = False
+
 
 class PatchEmbed(nn.Module):
     def __init__(self, img_size: int, patch_size: int, in_chans: int, embed_dim: int) -> None:
@@ -88,19 +95,42 @@ class SsmMambaMixer(nn.Module):
 
     def __init__(self, dim: int, state_dim: int = 16, conv_kernel: int = 3, expand: int = 2) -> None:
         super().__init__()
+        self.dim = dim
+        self.state_dim = state_dim
+        self.conv_kernel = conv_kernel
+        self.expand = expand
         if SsmMamba is None:
             reason = f" Import failed with: {MAMBA_SSM_IMPORT_ERROR}" if MAMBA_SSM_IMPORT_ERROR else ""
             raise ImportError(
                 "mamba-ssm is not installed or could not be imported."
                 f"{reason} Install/fix it or set student.mamba_backend='pytorch'."
             )
-        kwargs = {"d_model": dim, "d_state": state_dim, "d_conv": conv_kernel, "expand": expand}
+        self.use_fast_path = CAUSAL_CONV1D_AVAILABLE
+        self.mixer = self._build_mixer(self.use_fast_path)
+
+    def _build_mixer(self, use_fast_path: bool) -> nn.Module:
+        kwargs = {
+            "d_model": self.dim,
+            "d_state": self.state_dim,
+            "d_conv": self.conv_kernel,
+            "expand": self.expand,
+        }
         if "use_fast_path" in inspect.signature(SsmMamba).parameters:
-            kwargs["use_fast_path"] = True
-        self.mixer = SsmMamba(**kwargs)
+            kwargs["use_fast_path"] = use_fast_path
+        return SsmMamba(**kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.mixer(x)
+        try:
+            return self.mixer(x)
+        except AssertionError as exc:
+            if self.use_fast_path and "causal_conv1d_cuda is not available" in str(exc):
+                state = self.mixer.state_dict()
+                self.use_fast_path = False
+                self.mixer = self._build_mixer(use_fast_path=False)
+                self.mixer.load_state_dict(state)
+                self.mixer = self.mixer.to(x.device)
+                return self.mixer(x)
+            raise
 
 
 def build_mamba_mixer(
