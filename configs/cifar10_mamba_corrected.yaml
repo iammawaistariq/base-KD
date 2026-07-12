@@ -1,0 +1,43 @@
+run_name: cifar10_mamba_corrected
+seed: 42
+device: auto
+output_dir: runs/cifar10_mamba_corrected
+
+dataset:
+  name: cifar10
+  root: data
+  download: true
+  image_size: 224
+  normalization: imagenet
+  validation_fraction: 0.1
+  split_seed: 42
+  batch_size: 64
+  eval_batch_size: 64
+  num_workers: 4
+  num_classes: 10
+  drop_last: true
+
+model:
+  name: vision_mamba
+  mamba_backend: mamba_ssm
+  patch_size: 16
+  embed_dim: 128
+  depth: 8
+  state_dim: 16
+  conv_kernel: 3
+  expand: 2
+  bidirectional: false
+  pool: mean
+  drop_rate: 0.0
+
+train:
+  epochs: 80
+  lr: 0.0008
+  min_lr: 0.000001
+  weight_decay: 0.05
+  warmup_epochs: 5
+  amp: true
+  grad_clip_norm: 1.0
+
+distillation:
+  enabled: false

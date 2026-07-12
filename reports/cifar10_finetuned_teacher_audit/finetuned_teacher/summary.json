@@ -1,0 +1,19 @@
+{
+  "model": "finetuned_teacher",
+  "label": "Fine-tuned ViT-B/16 teacher",
+  "checkpoint": "W:\\Awais - Thesis\\MIDL-Lab\\base-KD\\runs\\cifar10_timm_teacher_finetuned\\best.pt",
+  "valid_comparison": true,
+  "warning": "",
+  "test_images": 10000,
+  "correct": 9855,
+  "failures": 145,
+  "accuracy_top1": 0.9855,
+  "accuracy_top5": 0.9998,
+  "cross_entropy_loss": 0.12472375966752357,
+  "macro_precision": 0.9854959919977457,
+  "macro_recall": 0.9855,
+  "macro_f1": 0.9854913043924789,
+  "parameters": 85806346,
+  "elapsed_seconds": 56.203010000055656,
+  "note": "ViT-B/16 fine-tuned on CIFAR-10 with a trained classification head."
+}

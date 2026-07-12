@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
-
+import torch
 if TYPE_CHECKING:
     from torch.utils.data import DataLoader
 
@@ -105,9 +105,20 @@ class FlatCifarImageDataset:
         return image, target
 
 
-def _build_transforms(dataset_name: str, image_size: int, train: bool):
+def _build_transforms(
+    dataset_name: str,
+    image_size: int,
+    train: bool,
+    normalization: str | None = None,
+):
     _, transforms = _require_torchvision()
-    mean, std = CIFAR_MEAN_STD.get(dataset_name, (IMAGENET_MEAN, IMAGENET_STD))
+    if normalization not in {None, "dataset", "imagenet"}:
+        raise ValueError("dataset.normalization must be one of: dataset, imagenet")
+    mean, std = (
+        (IMAGENET_MEAN, IMAGENET_STD)
+        if normalization == "imagenet"
+        else CIFAR_MEAN_STD.get(dataset_name, (IMAGENET_MEAN, IMAGENET_STD))
+    )
 
     if train:
         ops = [
@@ -149,7 +160,7 @@ def _build_flat_cifar_images(cfg: dict[str, Any], name: str, root: Path, logger:
     train_dataset = FlatCifarImageDataset(
         train_dir,
         labels_path,
-        transform=_build_transforms(name, image_size, train=True),
+        transform=_build_transforms(name, image_size, train=True, normalization=cfg.get("normalization")),
     )
     _log(
         logger,
@@ -161,7 +172,7 @@ def _build_flat_cifar_images(cfg: dict[str, Any], name: str, root: Path, logger:
     val_dataset = FlatCifarImageDataset(
         val_dir,
         labels_path,
-        transform=_build_transforms(name, image_size, train=False),
+        transform=_build_transforms(name, image_size, train=False, normalization=cfg.get("normalization")),
     )
     _log(
         logger,
@@ -209,7 +220,7 @@ def _build_cifar(cfg: dict[str, Any], name: str, logger: Logger | None):
     train_dataset = dataset_cls(
         root=str(root),
         train=True,
-        transform=_build_transforms(name, image_size, train=True),
+        transform=_build_transforms(name, image_size, train=True, normalization=cfg.get("normalization")),
         download=download,
     )
     _log(
@@ -218,18 +229,52 @@ def _build_cifar(cfg: dict[str, Any], name: str, logger: Logger | None):
         f"({time.perf_counter() - start:.1f}s)",
     )
 
-    start = time.perf_counter()
-    val_dataset = dataset_cls(
-        root=str(root),
-        train=False,
-        transform=_build_transforms(name, image_size, train=False),
-        download=download,
-    )
-    _log(
-        logger,
-        f"data: val split ready samples={len(val_dataset)} "
-        f"({time.perf_counter() - start:.1f}s)",
-    )
+    validation_fraction = float(cfg.get("validation_fraction", 0.0))
+    if validation_fraction:
+        if not 0.0 < validation_fraction < 1.0:
+            raise ValueError("dataset.validation_fraction must be between 0 and 1.")
+        eval_train_dataset = dataset_cls(
+            root=str(root),
+            train=True,
+            transform=_build_transforms(
+                name,
+                image_size,
+                train=False,
+                normalization=cfg.get("normalization"),
+            ),
+            download=False,
+        )
+        generator = torch.Generator().manual_seed(int(cfg.get("split_seed", 42)))
+        permutation = torch.randperm(len(train_dataset), generator=generator).tolist()
+        validation_size = int(round(len(train_dataset) * validation_fraction))
+        validation_indices = permutation[:validation_size]
+        training_indices = permutation[validation_size:]
+        train_dataset = torch.utils.data.Subset(train_dataset, training_indices)
+        val_dataset = torch.utils.data.Subset(eval_train_dataset, validation_indices)
+        _log(
+            logger,
+            f"data: deterministic train/validation split "
+            f"train={len(train_dataset)} val={len(val_dataset)} "
+            f"seed={int(cfg.get('split_seed', 42))}",
+        )
+    else:
+        start = time.perf_counter()
+        val_dataset = dataset_cls(
+            root=str(root),
+            train=False,
+            transform=_build_transforms(
+                name,
+                image_size,
+                train=False,
+                normalization=cfg.get("normalization"),
+            ),
+            download=download,
+        )
+        _log(
+            logger,
+            f"data: official test split ready samples={len(val_dataset)} "
+            f"({time.perf_counter() - start:.1f}s)",
+        )
     return train_dataset, val_dataset
 
 
@@ -247,7 +292,7 @@ def _build_imagefolder(cfg: dict[str, Any], logger: Logger | None):
     start = time.perf_counter()
     train_dataset = datasets.ImageFolder(
         str(train_dir),
-        transform=_build_transforms("imagefolder", image_size, train=True),
+        transform=_build_transforms("imagefolder", image_size, train=True, normalization=cfg.get("normalization")),
     )
     _log(
         logger,
@@ -259,7 +304,7 @@ def _build_imagefolder(cfg: dict[str, Any], logger: Logger | None):
     _log(logger, f"data: scanning ImageFolder val_dir={val_dir}")
     val_dataset = datasets.ImageFolder(
         str(val_dir),
-        transform=_build_transforms("imagefolder", image_size, train=False),
+        transform=_build_transforms("imagefolder", image_size, train=False, normalization=cfg.get("normalization")),
     )
     _log(
         logger,
