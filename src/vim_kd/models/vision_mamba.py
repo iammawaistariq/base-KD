@@ -90,6 +90,79 @@ class TorchMambaMixer(nn.Module):
         return self.out_proj(y)
 
 
+class ReferenceSsmMamba(nn.Module):
+    """Pure-PyTorch Mamba-1 inference path compatible with mamba-ssm checkpoints."""
+
+    def __init__(self, d_model: int, d_state: int, d_conv: int, expand: int) -> None:
+        super().__init__()
+        self.d_model = d_model
+        self.d_inner = int(expand * d_model)
+        self.d_state = d_state
+        self.dt_rank = (d_model + 15) // 16
+        self.in_proj = nn.Linear(d_model, self.d_inner * 2, bias=False)
+        self.conv1d = nn.Conv1d(
+            self.d_inner,
+            self.d_inner,
+            kernel_size=d_conv,
+            groups=self.d_inner,
+            padding=d_conv - 1,
+            bias=True,
+        )
+        self.x_proj = nn.Linear(
+            self.d_inner,
+            self.dt_rank + d_state * 2,
+            bias=False,
+        )
+        self.dt_proj = nn.Linear(self.dt_rank, self.d_inner, bias=True)
+        self.A_log = nn.Parameter(
+            torch.log(torch.arange(1, d_state + 1, dtype=torch.float32))
+            .unsqueeze(0)
+            .repeat(self.d_inner, 1)
+        )
+        self.D = nn.Parameter(torch.ones(self.d_inner))
+        self.out_proj = nn.Linear(self.d_inner, d_model, bias=False)
+
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        sequence_length = hidden_states.shape[1]
+        x, z = self.in_proj(hidden_states).chunk(2, dim=-1)
+        x = self.conv1d(x.transpose(1, 2))[..., :sequence_length].transpose(1, 2)
+        x = F.silu(x)
+
+        projected = self.x_proj(x)
+        dt, b, c = torch.split(
+            projected,
+            [self.dt_rank, self.d_state, self.d_state],
+            dim=-1,
+        )
+        dt = F.linear(dt, self.dt_proj.weight)
+        a = -torch.exp(self.A_log.float()).to(dtype=x.dtype, device=x.device)
+        d = self.D.to(dtype=x.dtype, device=x.device)
+        dt_bias = self.dt_proj.bias.to(dtype=x.dtype, device=x.device)
+
+        state = x.new_zeros(x.shape[0], self.d_inner, self.d_state)
+        outputs = []
+        for index in range(sequence_length):
+            delta = F.softplus(dt[:, index] + dt_bias).unsqueeze(-1)
+            input_t = x[:, index].unsqueeze(-1)
+            b_t = b[:, index].unsqueeze(1)
+            c_t = c[:, index].unsqueeze(1)
+            state = state * torch.exp(delta * a) + delta * b_t * input_t
+            output_t = (state * c_t).sum(dim=-1) + d * x[:, index]
+            outputs.append(output_t * F.silu(z[:, index]))
+
+        return self.out_proj(torch.stack(outputs, dim=1))
+
+
+class ReferenceSsmMambaMixer(nn.Module):
+    """Wrapper retaining the state-dict layout produced by SsmMambaMixer."""
+
+    def __init__(self, dim: int, state_dim: int = 16, conv_kernel: int = 3, expand: int = 2) -> None:
+        super().__init__()
+        self.mixer = ReferenceSsmMamba(dim, state_dim, conv_kernel, expand)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.mixer(x)
+
 class SsmMambaMixer(nn.Module):
     """Optimized Mamba mixer backed by the mamba-ssm package."""
 
@@ -147,7 +220,11 @@ def build_mamba_mixer(
         return SsmMambaMixer(dim, state_dim, conv_kernel, expand)
     if backend == "pytorch":
         return TorchMambaMixer(dim, state_dim, conv_kernel, expand)
-    raise ValueError("student.mamba_backend must be one of: auto, mamba_ssm, pytorch")
+    if backend == "mamba_reference":
+        return ReferenceSsmMambaMixer(dim, state_dim, conv_kernel, expand)
+    raise ValueError(
+        "student.mamba_backend must be one of: auto, mamba_ssm, pytorch, mamba_reference"
+    )
 
 
 class VisionMambaBlock(nn.Module):

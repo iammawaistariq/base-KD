@@ -1,0 +1,36 @@
+run_name: cifar10_timm_teacher_finetuned
+seed: 42
+device: auto
+output_dir: runs/cifar10_timm_teacher_finetuned
+
+dataset:
+  name: cifar10
+  root: data
+  download: true
+  image_size: 224
+  normalization: imagenet
+  validation_fraction: 0.1
+  split_seed: 42
+  batch_size: 16
+  eval_batch_size: 64
+  num_workers: 4
+  num_classes: 10
+  drop_last: true
+
+model:
+  role: teacher
+  name: timm
+  timm_name: vit_base_patch16_224
+  pretrained: true
+
+train:
+  epochs: 30
+  lr: 0.00003
+  min_lr: 0.000001
+  weight_decay: 0.05
+  warmup_epochs: 2
+  amp: true
+  grad_clip_norm: 1.0
+
+distillation:
+  enabled: false

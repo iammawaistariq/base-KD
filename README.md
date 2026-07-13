@@ -1,4 +1,4 @@
-# Transformer to Mamba Knowledge Distillation for Vision
+# Vision Transformer to Mamba Knowledge Distillation for Image Classification
 
 This repository is a practical baseline for learning and extending knowledge
 distillation from a Transformer teacher to a Mamba-style vision student.
@@ -12,6 +12,7 @@ It is intentionally not a dummy demo:
   relation distillation.
 - Datasets: CIFAR-10/100 and generic `ImageFolder`.
 - Training: config files, AMP, checkpoints, metrics, and resume support.
+- Dashboard: uploaded-image comparison across ViT and Mamba classifiers.
 
 The student uses `mamba-ssm` automatically when it is installed, and falls back
 to a readable pure PyTorch mixer otherwise. The fallback is useful for study, but
@@ -98,6 +99,23 @@ dataset_root/
   val/class_b/*.jpg
 ```
 
+## RTX 50-series / Blackwell setup
+
+RTX 50-series GPUs use compute capability sm_120. They require a PyTorch build
+compiled with CUDA 12.8 or newer. If an older cu121 environment is already
+installed, replace its PyTorch packages before running this project:
+
+    pip uninstall -y torch torchvision torchaudio
+    pip install torch==2.11.0 torchvision==0.26.0 --index-url https://download.pytorch.org/whl/cu128
+
+Verify that sm_120 appears in the compiled architecture list:
+
+    python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list())"
+
+The optimized Mamba extension must then be rebuilt against the new PyTorch/CUDA
+installation. The upstream mamba-ssm project officially targets Linux; WSL2 or
+Linux is recommended for optimized Mamba on an RTX 50-series GPU.
+
 ## Quick Start
 
 Train a ViT teacher first:
@@ -123,7 +141,7 @@ Evaluate a checkpoint:
 ```bash
 python scripts/evaluate.py \
   --config configs/cifar10_vit_to_mamba_kd.yaml \
-  --checkpoint runs/cifar10_vit_to_mamba_kd/best.pt
+  --checkpoint runs/cifar10_timm_vit_to_mamba_kd/best.pt
 ```
 
 Compare teacher, plain Mamba, and Mamba-KD:
@@ -131,6 +149,92 @@ Compare teacher, plain Mamba, and Mamba-KD:
 ```bash
 python scripts/compare_models.py
 ```
+
+## Uploaded-image dashboard
+
+Install dependencies and launch from the repository root:
+
+    streamlit run scripts/app.py
+
+Upload a JPG, PNG, BMP, or WebP image to compare top-k predictions from the
+pretrained ViT-B/16 teacher definition, trained compact ViT, normally trained
+Mamba, and distilled Mamba. The app uses checkpoints under runs/, caches models,
+selects CUDA automatically, and lets one missing model fail without stopping the
+other comparisons.
+
+The compact ViT and timm ViT are separate teacher choices. The supplied KD
+config uses pretrained timm ViT-B/16 and does not load the compact ViT
+checkpoint. KD training stores only the student, so the dashboard timm teacher
+has a new CIFAR-10 head unless you supply a fine-tuned teacher checkpoint in
+MODEL_SPECS in scripts/app.py. Treat its output as diagnostic until then. The
+default classifiers expect CIFAR-10-like images.
+
+Default checkpoints:
+
+- Compact ViT: runs/cifar10_teacher_vit/best.pt
+- Plain Mamba: runs/cifar10_mamba/best.pt
+- Distilled Mamba: runs/cifar10_timm_vit_to_mamba_kd/best.pt
+
+## Corrected fine-tuned-teacher experiment
+
+The original timm KD run used a random frozen CIFAR-10 head and is retained only
+as a diagnostic legacy result. The corrected experiment uses a deterministic
+45,000/5,000 training/validation split, ImageNet normalization for every model,
+a saved fine-tuned ViT-B/16 teacher, a minimum teacher-accuracy gate, and a fresh
+plain/KD Mamba comparison. The official 10,000-image test split is used only for
+final reporting.
+
+Run the complete pipeline:
+
+    python scripts/run_corrected_experiment.py --device cuda
+
+The default teacher gate requires at least 90% validation accuracy. Existing
+successful stages can be reused after interruption:
+
+    python scripts/run_corrected_experiment.py --device cuda --skip-existing
+
+Manual stages are:
+
+    python scripts/train.py --config configs/cifar10_timm_teacher_finetune.yaml
+    python scripts/verify_checkpoint.py --config configs/cifar10_timm_teacher_finetune.yaml --checkpoint runs/cifar10_timm_teacher_finetuned/best.pt --section model --split validation --min-accuracy 90 --device cuda
+    python scripts/verify_checkpoint.py --config configs/cifar10_timm_teacher_finetune.yaml --checkpoint runs/cifar10_timm_teacher_finetuned/best.pt --section model --split test --device cuda
+    python scripts/train.py --config configs/cifar10_mamba_corrected.yaml
+    python scripts/train.py --config configs/cifar10_timm_teacher_to_mamba_corrected_kd.yaml
+
+After all checkpoints exist, create an isolated corrected audit:
+
+    python scripts/analyze_cifar10.py --model finetuned_teacher --model corrected_plain_mamba --model corrected_distilled_mamba --device cuda --output-dir reports/cifar10_corrected_audit --export-failure-images
+
+Outputs are stored separately in:
+
+- runs/cifar10_timm_teacher_finetuned/
+- runs/cifar10_mamba_corrected/
+- runs/cifar10_timm_teacher_to_mamba_corrected_kd/
+- reports/cifar10_corrected_audit/
+
+## Full CIFAR-10 test audit
+
+Evaluate all four model entries on the official unseen 10,000-image CIFAR-10 test
+split:
+
+    python scripts/analyze_cifar10.py --device auto
+
+Reports are written to reports/cifar10_audit/. Each model receives count and
+row-normalized confusion matrices in CSV and PNG form, per-class precision,
+recall, F1, TP, FP, FN, and TN counts, a CSV row for every test image, and a
+failures-only CSV. Every row includes the stable CIFAR test index, true class,
+predicted class, confidence, and error interpretation.
+
+For a mistake whose true class is cat and prediction is dog, the same image is a
+false negative for cat and a false positive for dog. To also save the original
+32x32 failed images, run:
+
+    python scripts/analyze_cifar10.py --export-failure-images
+
+The default timm teacher has no trained CIFAR-10 head and is flagged as an
+invalid comparison. Supply a real fine-tuned teacher checkpoint with
+--teacher-checkpoint PATH to obtain meaningful teacher metrics. Use
+--max-samples N only for a quick smoke test; omit it for the final thesis report.
 
 ## What to Study
 
