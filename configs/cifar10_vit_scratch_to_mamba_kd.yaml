@@ -1,27 +1,27 @@
-run_name: cifar10_timm_teacher_to_mamba_corrected_kd
+run_name: cifar10_vit_scratch_to_mamba_kd
 seed: 42
 device: auto
-output_dir: runs/cifar10_timm_teacher_to_mamba_corrected_kd
+output_dir: runs/cifar10_vit_scratch_to_mamba_kd
 
 dataset:
   name: cifar10
   root: data
   download: true
   image_size: 224
-  normalization: imagenet
-  validation_fraction: 0.1
-  split_seed: 42
-  batch_size: 16
+  batch_size: 64
   eval_batch_size: 64
   num_workers: 4
   num_classes: 10
-  drop_last: true
 
 teacher:
-  name: timm
-  timm_name: vit_base_patch16_224
-  pretrained: false
-  checkpoint: runs/cifar10_timm_teacher_finetuned/best.pt
+  name: tiny_vit
+  checkpoint: runs/cifar10_vit_scratch/best.pt
+  patch_size: 16
+  embed_dim: 192
+  depth: 6
+  num_heads: 3
+  mlp_ratio: 4.0
+  drop_rate: 0.0
 
 student:
   name: vision_mamba

@@ -1,0 +1,34 @@
+========================================================================================================================================================================================================================
+System 1: fine-tune pretrained ViT
+	cd ~/Desktop/Awais-Tariq/base-KD
+	conda activate vimkd-mamba
+
+	python scripts/train.py --config configs/cifar10_vit_pretrained_finetune.yaml
+
+This will create:
+	runs/cifar10_vit_pretrained_finetuned/best.pt
+
+After it finishes, verify it:
+	python scripts/verify_checkpoint.py --config configs/cifar10_vit_pretrained_finetune.yaml  --checkpoint runs/cifar10_vit_pretrained_finetuned/best.pt  --section model --split test --device cuda
+
+
+========================================================================================================================================================================================================================
+
+System 2: distill Mamba from scratch ViT
+	python scripts/train.py --config configs/cifar10_vit_scratch_to_mamba_kd.yaml
+
+
+
+After the pretrained ViT fine-tuning is done, then run the second KD:
+	python scripts/train.py  --config configs/cifar10_vit_pretrained_to_mamba_kd.yaml
+
+This requires:
+	runs/cifar10_vit_pretrained_finetuned/best.pt
+
+and creates:
+	runs/cifar10_vit_pretrained_to_mamba_kd/best.pt
+
+Final comparison:
+	python scripts/compare_models.py
+
+

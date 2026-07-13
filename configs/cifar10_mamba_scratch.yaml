@@ -1,24 +1,19 @@
-run_name: cifar10_timm_vit_to_mamba_kd
+run_name: cifar10_mamba_scratch
 seed: 42
 device: auto
-output_dir: runs/cifar10_timm_vit_to_mamba_kd
+output_dir: runs/cifar10_mamba_scratch
 
 dataset:
   name: cifar10
   root: data
   download: true
   image_size: 224
-  batch_size: 64
-  eval_batch_size: 64
+  batch_size: 32
+  eval_batch_size: 32
   num_workers: 4
   num_classes: 10
 
-teacher:
-  name: timm
-  timm_name: vit_base_patch16_224
-  pretrained: true
-
-student:
+model:
   name: vision_mamba
   mamba_backend: auto
   patch_size: 16
@@ -40,9 +35,4 @@ train:
   grad_clip_norm: 1.0
 
 distillation:
-  enabled: true
-  temperature: 4.0
-  ce_weight: 0.3
-  kd_weight: 0.7
-  feature_weight: 0.1
-  relation_weight: 0.0
+  enabled: false

@@ -51,66 +51,55 @@ class ModelSpec:
 
 
 MODEL_SPECS = {
-    "timm_teacher": ModelSpec(
-        "timm_teacher",
-        "Pretrained ViT-B/16 teacher definition",
-        "configs/cifar10_vit_to_mamba_kd.yaml",
-        "teacher",
-        None,
-        "ImageNet-pretrained backbone with a random CIFAR-10 head; diagnostic only.",
-        False,
-    ),
-    "compact_vit": ModelSpec(
-        "compact_vit",
-        "Trained compact ViT",
-        "configs/cifar10_teacher_vit.yaml",
+    "vit_scratch": ModelSpec(
+        "vit_scratch",
+        "Scratch-trained compact ViT",
+        "configs/cifar10_vit_scratch.yaml",
         "model",
-        "runs/cifar10_teacher_vit/best.pt",
+        "runs/cifar10_vit_scratch/best.pt",
         "Compact ViT trained directly on CIFAR-10.",
     ),
-    "plain_mamba": ModelSpec(
-        "plain_mamba",
-        "Normally trained Mamba",
-        "configs/cifar10_mamba.yaml",
-        "model",
-        "runs/cifar10_mamba/best.pt",
-        "Vision Mamba trained directly on CIFAR-10.",
-    ),
-    "distilled_mamba": ModelSpec(
-        "distilled_mamba",
-        "Distilled Mamba",
-        "configs/cifar10_vit_to_mamba_kd.yaml",
-        "student",
-        "runs/cifar10_timm_vit_to_mamba_kd/best.pt",
-        "Vision Mamba distilled from the timm ViT teacher definition.",
-    ),
-    "finetuned_teacher": ModelSpec(
-        "finetuned_teacher",
+    "vit_pretrained_finetuned": ModelSpec(
+        "vit_pretrained_finetuned",
         "Fine-tuned ViT-B/16 teacher",
-        "configs/cifar10_timm_teacher_finetune.yaml",
+        "configs/cifar10_vit_pretrained_finetune.yaml",
         "model",
-        "runs/cifar10_timm_teacher_finetuned/best.pt",
+        "runs/cifar10_vit_pretrained_finetuned/best.pt",
         "ViT-B/16 fine-tuned on CIFAR-10 with a trained classification head.",
     ),
-    "corrected_plain_mamba": ModelSpec(
-        "corrected_plain_mamba",
-        "Corrected plain Mamba baseline",
-        "configs/cifar10_mamba_corrected.yaml",
-        "model",
-        "runs/cifar10_mamba_corrected/best.pt",
-        "Fair baseline trained with the corrected split and normalization.",
-    ),
-    "corrected_distilled_mamba": ModelSpec(
-        "corrected_distilled_mamba",
-        "Mamba distilled from fine-tuned teacher",
-        "configs/cifar10_timm_teacher_to_mamba_corrected_kd.yaml",
+    "mamba_kd_from_scratch_vit": ModelSpec(
+        "mamba_kd_from_scratch_vit",
+        "Mamba distilled from scratch ViT",
+        "configs/cifar10_vit_scratch_to_mamba_kd.yaml",
         "student",
-        "runs/cifar10_timm_teacher_to_mamba_corrected_kd/best.pt",
+        "runs/cifar10_vit_scratch_to_mamba_kd/best.pt",
+        "Student distilled from the saved scratch-trained compact ViT.",
+    ),
+    "mamba_scratch": ModelSpec(
+        "mamba_scratch",
+        "Scratch-trained Mamba",
+        "configs/cifar10_mamba_scratch.yaml",
+        "model",
+        "runs/cifar10_mamba_scratch/best.pt",
+        "Vision Mamba trained directly on CIFAR-10.",
+    ),
+    "mamba_kd_from_pretrained_vit": ModelSpec(
+        "mamba_kd_from_pretrained_vit",
+        "Mamba distilled from fine-tuned teacher",
+        "configs/cifar10_vit_pretrained_to_mamba_kd.yaml",
+        "student",
+        "runs/cifar10_vit_pretrained_to_mamba_kd/best.pt",
         "Student distilled from the saved, fine-tuned ViT-B/16 teacher.",
     ),
 }
 
-DEFAULT_MODELS = ["timm_teacher", "compact_vit", "plain_mamba", "distilled_mamba"]
+DEFAULT_MODELS = [
+    "vit_scratch",
+    "mamba_scratch",
+    "vit_pretrained_finetuned",
+    "mamba_kd_from_scratch_vit",
+    "mamba_kd_from_pretrained_vit",
+]
 
 
 class IndexedDataset(Dataset):
@@ -539,8 +528,8 @@ def main() -> None:
         "selected_models": selected,
         "errors": errors,
         "teacher_warning": (
-            "The default timm teacher has a pretrained backbone but a random "
-            "CIFAR-10 head. Its metrics are not a valid trained-teacher comparison."
+        "Legacy random-head pretrained-teacher runs are stored under runs/legacy/ "
+        "and are excluded from the standard audit."
         ),
         "error_semantics": (
             "For a multiclass mistake true=A, predicted=B: the image is a false "

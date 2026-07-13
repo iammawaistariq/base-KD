@@ -13,18 +13,23 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 PYTHON = sys.executable
 
-TEACHER_CONFIG = "configs/cifar10_timm_teacher_finetune.yaml"
-TEACHER_CHECKPOINT = "runs/cifar10_timm_teacher_finetuned/best.pt"
-PLAIN_CONFIG = "configs/cifar10_mamba_corrected.yaml"
-PLAIN_CHECKPOINT = "runs/cifar10_mamba_corrected/best.pt"
-KD_CONFIG = "configs/cifar10_timm_teacher_to_mamba_corrected_kd.yaml"
-KD_CHECKPOINT = "runs/cifar10_timm_teacher_to_mamba_corrected_kd/best.pt"
+SCRATCH_VIT_CONFIG = "configs/cifar10_vit_scratch.yaml"
+SCRATCH_VIT_CHECKPOINT = "runs/cifar10_vit_scratch/best.pt"
+PRETRAINED_TEACHER_CONFIG = "configs/cifar10_vit_pretrained_finetune.yaml"
+PRETRAINED_TEACHER_CHECKPOINT = "runs/cifar10_vit_pretrained_finetuned/best.pt"
+PLAIN_CONFIG = "configs/cifar10_mamba_scratch.yaml"
+PLAIN_CHECKPOINT = "runs/cifar10_mamba_scratch/best.pt"
+SCRATCH_VIT_KD_CONFIG = "configs/cifar10_vit_scratch_to_mamba_kd.yaml"
+SCRATCH_VIT_KD_CHECKPOINT = "runs/cifar10_vit_scratch_to_mamba_kd/best.pt"
+PRETRAINED_TEACHER_KD_CONFIG = "configs/cifar10_vit_pretrained_to_mamba_kd.yaml"
+PRETRAINED_TEACHER_KD_CHECKPOINT = "runs/cifar10_vit_pretrained_to_mamba_kd/best.pt"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--teacher-min-accuracy", type=float, default=90.0)
+    parser.add_argument("--scratch-vit-min-accuracy", type=float, default=75.0)
+    parser.add_argument("--pretrained-teacher-min-accuracy", type=float, default=90.0)
     parser.add_argument("--skip-existing", action="store_true")
     parser.add_argument("--skip-plain-baseline", action="store_true")
     parser.add_argument("--num-workers", type=int, default=4)
@@ -81,19 +86,38 @@ def verify(
 def main() -> None:
     args = parse_args()
 
-    train(TEACHER_CONFIG, TEACHER_CHECKPOINT, args.skip_existing)
+    train(SCRATCH_VIT_CONFIG, SCRATCH_VIT_CHECKPOINT, args.skip_existing)
     verify(
-        TEACHER_CONFIG,
-        TEACHER_CHECKPOINT,
+        SCRATCH_VIT_CONFIG,
+        SCRATCH_VIT_CHECKPOINT,
         "model",
         "validation",
         args.device,
         args.num_workers,
-        args.teacher_min_accuracy,
+        args.scratch_vit_min_accuracy,
     )
     verify(
-        TEACHER_CONFIG,
-        TEACHER_CHECKPOINT,
+        SCRATCH_VIT_CONFIG,
+        SCRATCH_VIT_CHECKPOINT,
+        "model",
+        "test",
+        args.device,
+        args.num_workers,
+    )
+
+    train(PRETRAINED_TEACHER_CONFIG, PRETRAINED_TEACHER_CHECKPOINT, args.skip_existing)
+    verify(
+        PRETRAINED_TEACHER_CONFIG,
+        PRETRAINED_TEACHER_CHECKPOINT,
+        "model",
+        "validation",
+        args.device,
+        args.num_workers,
+        args.pretrained_teacher_min_accuracy,
+    )
+    verify(
+        PRETRAINED_TEACHER_CONFIG,
+        PRETRAINED_TEACHER_CHECKPOINT,
         "model",
         "test",
         args.device,
@@ -111,11 +135,21 @@ def main() -> None:
             args.num_workers,
         )
 
-    # This stage is reached only if the trained teacher passed the gate.
-    train(KD_CONFIG, KD_CHECKPOINT, args.skip_existing)
+    # These stages are reached only if both teachers passed their gates.
+    train(SCRATCH_VIT_KD_CONFIG, SCRATCH_VIT_KD_CHECKPOINT, args.skip_existing)
     verify(
-        KD_CONFIG,
-        KD_CHECKPOINT,
+        SCRATCH_VIT_KD_CONFIG,
+        SCRATCH_VIT_KD_CHECKPOINT,
+        "student",
+        "test",
+        args.device,
+        args.num_workers,
+    )
+
+    train(PRETRAINED_TEACHER_KD_CONFIG, PRETRAINED_TEACHER_KD_CHECKPOINT, args.skip_existing)
+    verify(
+        PRETRAINED_TEACHER_KD_CONFIG,
+        PRETRAINED_TEACHER_KD_CHECKPOINT,
         "student",
         "test",
         args.device,

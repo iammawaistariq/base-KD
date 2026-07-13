@@ -116,39 +116,42 @@ The optimized Mamba extension must then be rebuilt against the new PyTorch/CUDA
 installation. The upstream mamba-ssm project officially targets Linux; WSL2 or
 Linux is recommended for optimized Mamba on an RTX 50-series GPU.
 
-## Quick Start
+## Clean CIFAR-10 Experiment Setup
 
-Train a ViT teacher first:
+The final comparison should use these five experiments:
 
-```bash
-python scripts/train.py --config configs/cifar10_teacher_vit.yaml
-```
+- ViT from scratch: `configs/cifar10_vit_scratch.yaml`
+- Mamba from scratch: `configs/cifar10_mamba_scratch.yaml`
+- Pretrained ViT fine-tuned on CIFAR-10: `configs/cifar10_vit_pretrained_finetune.yaml`
+- Mamba distilled from scratch ViT: `configs/cifar10_vit_scratch_to_mamba_kd.yaml`
+- Mamba distilled from fine-tuned pretrained ViT: `configs/cifar10_vit_pretrained_to_mamba_kd.yaml`
 
-Then distill into the Mamba student:
-
-```bash
-python scripts/train.py --config configs/cifar10_vit_to_mamba_kd.yaml
-```
-
-Train the same Mamba student without distillation for a fair baseline:
+Run the full ordered pipeline:
 
 ```bash
-python scripts/train.py --config configs/cifar10_mamba.yaml
+python scripts/run_corrected_experiment.py --device cuda
 ```
 
-Evaluate a checkpoint:
+Resume after interruption:
 
 ```bash
-python scripts/evaluate.py \
-  --config configs/cifar10_vit_to_mamba_kd.yaml \
-  --checkpoint runs/cifar10_timm_vit_to_mamba_kd/best.pt
+python scripts/run_corrected_experiment.py --device cuda --skip-existing
 ```
 
-Compare teacher, plain Mamba, and Mamba-KD:
+Compare whichever checkpoints already exist:
 
 ```bash
 python scripts/compare_models.py
 ```
+
+Create final CIFAR-10 test reports:
+
+```bash
+python scripts/analyze_cifar10.py --device cuda --output-dir reports/cifar10_experiment_audit --export-failure-images
+```
+
+See `docs/experiment_plan.md` for the expected configs, checkpoints, and legacy
+run warning.
 
 ## Uploaded-image dashboard
 
@@ -171,18 +174,18 @@ default classifiers expect CIFAR-10-like images.
 
 Default checkpoints:
 
-- Compact ViT: runs/cifar10_teacher_vit/best.pt
-- Plain Mamba: runs/cifar10_mamba/best.pt
-- Distilled Mamba: runs/cifar10_timm_vit_to_mamba_kd/best.pt
+- Scratch compact ViT: runs/cifar10_vit_scratch/best.pt
+- Scratch Mamba: runs/cifar10_mamba_scratch/best.pt
+- Legacy distilled Mamba diagnostic: runs/legacy/cifar10_timm_random_head_to_mamba_kd/best.pt
 
 ## Corrected fine-tuned-teacher experiment
 
 The original timm KD run used a random frozen CIFAR-10 head and is retained only
 as a diagnostic legacy result. The corrected experiment uses a deterministic
 45,000/5,000 training/validation split, ImageNet normalization for every model,
-a saved fine-tuned ViT-B/16 teacher, a minimum teacher-accuracy gate, and a fresh
-plain/KD Mamba comparison. The official 10,000-image test split is used only for
-final reporting.
+saved teacher checkpoints, teacher-accuracy gates, and fresh plain/KD Mamba
+comparisons. The official 10,000-image test split is used only for final
+reporting.
 
 Run the complete pipeline:
 
@@ -195,22 +198,24 @@ successful stages can be reused after interruption:
 
 Manual stages are:
 
-    python scripts/train.py --config configs/cifar10_timm_teacher_finetune.yaml
-    python scripts/verify_checkpoint.py --config configs/cifar10_timm_teacher_finetune.yaml --checkpoint runs/cifar10_timm_teacher_finetuned/best.pt --section model --split validation --min-accuracy 90 --device cuda
-    python scripts/verify_checkpoint.py --config configs/cifar10_timm_teacher_finetune.yaml --checkpoint runs/cifar10_timm_teacher_finetuned/best.pt --section model --split test --device cuda
-    python scripts/train.py --config configs/cifar10_mamba_corrected.yaml
-    python scripts/train.py --config configs/cifar10_timm_teacher_to_mamba_corrected_kd.yaml
+    python scripts/train.py --config configs/cifar10_vit_scratch.yaml
+    python scripts/train.py --config configs/cifar10_vit_pretrained_finetune.yaml
+    python scripts/verify_checkpoint.py --config configs/cifar10_vit_pretrained_finetune.yaml --checkpoint runs/cifar10_vit_pretrained_finetuned/best.pt --section model --split validation --min-accuracy 90 --device cuda
+    python scripts/verify_checkpoint.py --config configs/cifar10_vit_pretrained_finetune.yaml --checkpoint runs/cifar10_vit_pretrained_finetuned/best.pt --section model --split test --device cuda
+    python scripts/train.py --config configs/cifar10_mamba_scratch.yaml
+    python scripts/train.py --config configs/cifar10_vit_scratch_to_mamba_kd.yaml
+    python scripts/train.py --config configs/cifar10_vit_pretrained_to_mamba_kd.yaml
 
 After all checkpoints exist, create an isolated corrected audit:
 
-    python scripts/analyze_cifar10.py --model finetuned_teacher --model corrected_plain_mamba --model corrected_distilled_mamba --device cuda --output-dir reports/cifar10_corrected_audit --export-failure-images
+    python scripts/analyze_cifar10.py --model vit_pretrained_finetuned --model mamba_scratch --model mamba_kd_from_pretrained_vit --device cuda --output-dir reports/cifar10_experiment_audit --export-failure-images
 
 Outputs are stored separately in:
 
-- runs/cifar10_timm_teacher_finetuned/
-- runs/cifar10_mamba_corrected/
-- runs/cifar10_timm_teacher_to_mamba_corrected_kd/
-- reports/cifar10_corrected_audit/
+- runs/cifar10_vit_pretrained_finetuned/
+- runs/cifar10_mamba_scratch/
+- runs/cifar10_vit_pretrained_to_mamba_kd/
+- reports/cifar10_experiment_audit/
 
 ## Full CIFAR-10 test audit
 

@@ -11,19 +11,28 @@ import torch
 
 from vim_kd.config import load_config
 from vim_kd.data.build import build_dataloaders
-from vim_kd.engine.trainer import build_student_or_teacher
-from vim_kd.utils.checkpoint import load_model_checkpoint
+from vim_kd.models.factory import build_model
 from vim_kd.utils.metrics import evaluate_classifier
 from vim_kd.utils.seed import resolve_device
 
 
 DEFAULT_RUNS = [
-    ("teacher", "configs/cifar10_teacher_vit.yaml", "runs/cifar10_teacher_vit/best.pt"),
-    ("mamba", "configs/cifar10_mamba.yaml", "runs/cifar10_mamba/best.pt"),
+    ("vit_scratch", "configs/cifar10_vit_scratch.yaml", "runs/cifar10_vit_scratch/best.pt"),
+    ("mamba_scratch", "configs/cifar10_mamba_scratch.yaml", "runs/cifar10_mamba_scratch/best.pt"),
     (
-        "mamba_kd",
-        "configs/cifar10_vit_to_mamba_kd.yaml",
-        "runs/cifar10_timm_vit_to_mamba_kd/best.pt",
+        "vit_pretrained_finetuned",
+        "configs/cifar10_vit_pretrained_finetune.yaml",
+        "runs/cifar10_vit_pretrained_finetuned/best.pt",
+    ),
+    (
+        "mamba_kd_from_scratch_vit",
+        "configs/cifar10_vit_scratch_to_mamba_kd.yaml",
+        "runs/cifar10_vit_scratch_to_mamba_kd/best.pt",
+    ),
+    (
+        "mamba_kd_from_finetuned_vit",
+        "configs/cifar10_vit_pretrained_to_mamba_kd.yaml",
+        "runs/cifar10_vit_pretrained_to_mamba_kd/best.pt",
     ),
 ]
 
@@ -42,6 +51,29 @@ def parse_args() -> argparse.Namespace:
 
 def count_parameters(model: torch.nn.Module) -> int:
     return sum(param.numel() for param in model.parameters())
+
+
+def load_state(path: Path) -> dict[str, torch.Tensor]:
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    state = payload["model"] if isinstance(payload, dict) and "model" in payload else payload
+    if not isinstance(state, dict):
+        raise TypeError(f"No model state dictionary found in {path}")
+    return state
+
+
+def build_eval_model(cfg: dict, checkpoint: Path, device: torch.device) -> torch.nn.Module:
+    state = load_state(checkpoint)
+    model_cfg = dict(cfg.get("student") or cfg.get("model"))
+    if (
+        model_cfg.get("name", "").lower() == "vision_mamba"
+        and any(".mixer.A_log" in key for key in state)
+    ):
+        model_cfg["mamba_backend"] = "mamba_reference"
+    if model_cfg.get("name", "").lower() == "timm":
+        model_cfg["pretrained"] = False
+    model = build_model(model_cfg, cfg["dataset"]).to(device)
+    model.load_state_dict(state, strict=True)
+    return model
 
 
 def main() -> None:
@@ -63,8 +95,7 @@ def main() -> None:
             rows.append((name, config_path, str(checkpoint), "missing", "-", "-", "-"))
             continue
 
-        model = build_student_or_teacher(cfg).to(device)
-        load_model_checkpoint(model, checkpoint, map_location=device)
+        model = build_eval_model(cfg, checkpoint, device)
         metrics = evaluate_classifier(model, val_loader, device)
         rows.append(
             (

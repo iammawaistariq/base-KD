@@ -1,7 +1,7 @@
-run_name: cifar10_mamba_corrected
+run_name: cifar10_vit_pretrained_to_mamba_kd
 seed: 42
 device: auto
-output_dir: runs/cifar10_mamba_corrected
+output_dir: runs/cifar10_vit_pretrained_to_mamba_kd
 
 dataset:
   name: cifar10
@@ -11,13 +11,19 @@ dataset:
   normalization: imagenet
   validation_fraction: 0.1
   split_seed: 42
-  batch_size: 64
+  batch_size: 16
   eval_batch_size: 64
   num_workers: 4
   num_classes: 10
   drop_last: true
 
-model:
+teacher:
+  name: timm
+  timm_name: vit_base_patch16_224
+  pretrained: false
+  checkpoint: runs/cifar10_vit_pretrained_finetuned/best.pt
+
+student:
   name: vision_mamba
   mamba_backend: mamba_ssm
   patch_size: 16
@@ -40,4 +46,9 @@ train:
   grad_clip_norm: 1.0
 
 distillation:
-  enabled: false
+  enabled: true
+  temperature: 4.0
+  ce_weight: 0.5
+  kd_weight: 0.5
+  feature_weight: 0.05
+  relation_weight: 0.0

@@ -1,7 +1,7 @@
-run_name: cifar10_timm_teacher_finetuned
+run_name: cifar10_vit_pretrained_finetuned
 seed: 42
 device: auto
-output_dir: runs/cifar10_timm_teacher_finetuned
+output_dir: runs/cifar10_vit_pretrained_finetuned
 
 dataset:
   name: cifar10

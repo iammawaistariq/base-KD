@@ -39,28 +39,34 @@ CIFAR10_CLASSES = (
 )
 
 MODEL_SPECS = {
-    "Fine-tuned ViT-B/16 teacher": {
-        "config": "configs/cifar10_timm_teacher_finetune.yaml",
+    "Scratch-trained compact ViT": {
+        "config": "configs/cifar10_vit_scratch.yaml",
         "section": "model",
-        "checkpoint": "runs/cifar10_timm_teacher_finetuned/best.pt",
+        "checkpoint": "runs/cifar10_vit_scratch/best.pt",
+        "note": "Compact ViT trained from scratch on CIFAR-10.",
+    },
+    "Scratch-trained Mamba": {
+        "config": "configs/cifar10_mamba_scratch.yaml",
+        "section": "model",
+        "checkpoint": "runs/cifar10_mamba_scratch/best.pt",
+        "note": "Vision Mamba trained from scratch on CIFAR-10.",
+    },
+    "Fine-tuned ViT-B/16 teacher": {
+        "config": "configs/cifar10_vit_pretrained_finetune.yaml",
+        "section": "model",
+        "checkpoint": "runs/cifar10_vit_pretrained_finetuned/best.pt",
         "note": "ViT-B/16 with a CIFAR-10-trained classification head.",
     },
-    "Trained compact ViT": {
-        "config": "configs/cifar10_teacher_vit.yaml",
-        "section": "model",
-        "checkpoint": "runs/cifar10_teacher_vit/best.pt",
-        "note": "Compact ViT trained directly on CIFAR-10 labels.",
-    },
-    "Corrected trained Mamba": {
-        "config": "configs/cifar10_mamba_corrected.yaml",
-        "section": "model",
-        "checkpoint": "runs/cifar10_mamba_corrected/best.pt",
-        "note": "Fair plain baseline using the corrected split and normalization.",
-    },
-    "Corrected distilled Mamba": {
-        "config": "configs/cifar10_timm_teacher_to_mamba_corrected_kd.yaml",
+    "Mamba KD from scratch ViT": {
+        "config": "configs/cifar10_vit_scratch_to_mamba_kd.yaml",
         "section": "student",
-        "checkpoint": "runs/cifar10_timm_teacher_to_mamba_corrected_kd/best.pt",
+        "checkpoint": "runs/cifar10_vit_scratch_to_mamba_kd/best.pt",
+        "note": "Mamba distilled from the saved scratch-trained compact ViT.",
+    },
+    "Mamba KD from fine-tuned ViT-B/16": {
+        "config": "configs/cifar10_vit_pretrained_to_mamba_kd.yaml",
+        "section": "student",
+        "checkpoint": "runs/cifar10_vit_pretrained_to_mamba_kd/best.pt",
         "note": "Mamba distilled from the saved, fine-tuned ViT-B/16 teacher.",
     },
 }
