@@ -1,27 +1,43 @@
-# CUDA 12.8+ is required for RTX 50-series / Blackwell (sm_120).
-# Install in a Python 3.10 env. For mamba-ssm, install CUDA nvcc/g++ first,
-# then run the README mamba install command with --no-build-isolation.
+# Reproducible direct dependencies for Linux/WSL, Python 3.10, and CUDA 12.8.
+#
+# Install this file only after activating a fresh environment. The PyTorch
+# index below supplies the CUDA-enabled wheels; ordinary packages still come
+# from PyPI. See docs/INSTALL_SECOND_PC.md for the required installation order.
 --extra-index-url https://download.pytorch.org/whl/cu128
 
-torch==2.11.0
-torchvision==0.26.0
+# Deep learning stack. CUDA extensions are installed separately after these.
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
 timm==1.0.27
+
+# Configuration, datasets, numerics, and reporting.
 PyYAML==6.0.3
 tqdm==4.68.4
 numpy==2.2.6
+scipy==1.15.3
 scikit-learn==1.7.2
-matplotlib>=3.9,<4
-pytest==9.1.1
-ruff==0.15.20
+matplotlib==3.10.9
+Pillow==12.2.0
+safetensors==0.8.0
 
-# mamba-ssm 2.2.x imports generation symbols that are removed/changed in
-# newer Transformers releases. Keep this pinned before installing mamba-ssm.
+# Dashboard. This release supports Pillow 12 and Python 3.10.
+streamlit==1.59.2
+
+# Hugging Face/timm ecosystem. Keep these pins together.
 transformers==4.44.2
 tokenizers==0.19.1
 huggingface-hub==0.36.2
 
-# Build helpers used by causal-conv1d / mamba-ssm source builds.
+# CUDA extension build prerequisites.
 ninja==1.13.0
 einops==0.8.2
 packaging==26.0
-streamlit>=1.40,<2
+
+# Tests and linting.
+pytest==9.1.1
+ruff==0.15.20
+
+# Do not add mamba-ssm or causal-conv1d here. They must be installed after
+# PyTorch with --no-build-isolation so they compile against this exact ABI:
+#   causal-conv1d==1.4.0
+#   mamba-ssm==2.2.6.post3

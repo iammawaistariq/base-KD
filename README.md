@@ -20,6 +20,9 @@ the optimized backend is the practical choice for training speed.
 
 ## Setup
 
+For a clean, reproducible CUDA 12.8 installation on another matching Linux or
+WSL2 computer, follow [the second-PC installation guide](docs/INSTALL_SECOND_PC.md).
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate

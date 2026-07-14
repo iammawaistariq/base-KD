@@ -1,8 +1,5 @@
 ========================================================================================================================================================================================================================
 System 1: fine-tune pretrained ViT
-	cd ~/Desktop/Awais-Tariq/base-KD
-	conda activate vimkd-mamba
-
 	python scripts/train.py --config configs/cifar10_vit_pretrained_finetune.yaml
 
 This will create:

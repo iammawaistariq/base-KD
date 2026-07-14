@@ -23,12 +23,20 @@ python3 -m venv .venv-wsl
 source .venv-wsl/bin/activate
 python -m pip install --upgrade pip setuptools wheel
 
-python -m pip install   torch==2.11.0 torchvision==0.26.0   --index-url https://download.pytorch.org/whl/cu128
 python -m pip install -r requirements.txt
 python -m pip install -e .
 
-echo "Building the current upstream Mamba CUDA extension..."
-MAMBA_FORCE_BUILD=TRUE python -m pip install   --no-cache-dir   --no-build-isolation   --no-deps   "git+https://github.com/state-spaces/mamba.git"
+echo "Building the pinned causal-conv1d CUDA extension..."
+CAUSAL_CONV1D_FORCE_BUILD=TRUE python -m pip install \
+  --no-cache-dir \
+  --no-build-isolation \
+  "causal-conv1d==1.4.0"
+
+echo "Building the pinned Mamba CUDA extension..."
+MAMBA_FORCE_BUILD=TRUE python -m pip install \
+  --no-cache-dir \
+  --no-build-isolation \
+  "mamba-ssm==2.2.6.post3"
 
 python - <<'PY'
 import torch
