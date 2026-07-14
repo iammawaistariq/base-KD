@@ -1,0 +1,22 @@
+{
+  "model": "mamba_kd_from_pretrained_vit",
+  "label": "Mamba distilled from fine-tuned teacher",
+  "checkpoint": "/home/tariq/Desktop/Awais-Tariq/base-KD/runs/cifar10_vit_pretrained_to_mamba_kd/best.pt",
+  "valid_comparison": true,
+  "warning": "",
+  "test_images": 10000,
+  "correct": 9095,
+  "failures": 905,
+  "accuracy_top1": 0.9095,
+  "accuracy_top5": 0.9964,
+  "cross_entropy_loss": 0.537543158518523,
+  "macro_precision": 0.9095010769789755,
+  "macro_recall": 0.9095000000000001,
+  "macro_f1": 0.9094612341608249,
+  "weighted_precision": 0.9095010769789754,
+  "weighted_recall": 0.9095,
+  "weighted_f1": 0.9094612341608248,
+  "parameters": 1056010,
+  "elapsed_seconds": 35.559381036999184,
+  "note": "Student distilled from the saved, fine-tuned ViT-B/16 teacher."
+}

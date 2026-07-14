@@ -1,0 +1,22 @@
+{
+  "model": "mamba_kd_from_scratch_vit",
+  "label": "Mamba distilled from scratch ViT",
+  "checkpoint": "/home/tariq/Desktop/Awais-Tariq/base-KD/runs/cifar10_vit_scratch_to_mamba_kd/best.pt",
+  "valid_comparison": true,
+  "warning": "",
+  "test_images": 10000,
+  "correct": 8791,
+  "failures": 1209,
+  "accuracy_top1": 0.8791,
+  "accuracy_top5": 0.9944,
+  "cross_entropy_loss": 0.43899941939413545,
+  "macro_precision": 0.8785841077319704,
+  "macro_recall": 0.8791,
+  "macro_f1": 0.8785080325995922,
+  "weighted_precision": 0.8785841077319703,
+  "weighted_recall": 0.8791,
+  "weighted_f1": 0.8785080325995924,
+  "parameters": 1056010,
+  "elapsed_seconds": 35.96019768299993,
+  "note": "Student distilled from the saved scratch-trained compact ViT."
+}

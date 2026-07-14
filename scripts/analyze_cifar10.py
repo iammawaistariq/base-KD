@@ -30,6 +30,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from vim_kd.config import load_config  # noqa: E402
+from vim_kd.audit import build_cross_model_rows  # noqa: E402
 from vim_kd.data.build import build_dataloaders  # noqa: E402
 from vim_kd.models.factory import build_model  # noqa: E402
 
@@ -100,6 +101,14 @@ DEFAULT_MODELS = [
     "mamba_kd_from_scratch_vit",
     "mamba_kd_from_pretrained_vit",
 ]
+
+TEACHER_STUDENT_PAIRS = {
+    "scratch_pair": ("vit_scratch", "mamba_kd_from_scratch_vit"),
+    "pretrained_pair": (
+        "vit_pretrained_finetuned",
+        "mamba_kd_from_pretrained_vit",
+    ),
+}
 
 
 class IndexedDataset(Dataset):
@@ -323,13 +332,26 @@ def per_class_rows(matrix: np.ndarray, report: dict[str, Any]) -> list[dict[str,
     return rows
 
 
+def source_reference(dataset, index: int) -> tuple[str, int | str]:
+    if hasattr(dataset, "samples"):
+        return str(Path(dataset.samples[index][0]).resolve()), ""
+    root = Path(getattr(dataset, "root", "data"))
+    base_folder = getattr(dataset, "base_folder", "cifar-10-batches-py")
+    return str((root / base_folder / "test_batch").resolve()), index
+
+
 def export_failure_image(dataset, output_dir: Path, index: int, true_name: str, pred_name: str) -> str:
     output_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{index:05d}_true-{true_name}_pred-{pred_name}.png"
     destination = output_dir / filename
-    raw = dataset.data[index]
-    Image.fromarray(raw).save(destination)
-    return str(destination)
+    if hasattr(dataset, "data"):
+        image = Image.fromarray(dataset.data[index])
+    elif hasattr(dataset, "samples"):
+        image = Image.open(dataset.samples[index][0]).convert("RGB")
+    else:
+        raise TypeError("Cannot export an image from this dataset type.")
+    image.save(destination)
+    return str(destination.resolve())
 
 
 def audit_model(
@@ -340,7 +362,7 @@ def audit_model(
     output_root: Path,
     teacher_checkpoint: str | None,
     export_images: bool,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     print()
     print(f"[{spec.key}] {spec.label}")
     start = time.perf_counter()
@@ -380,14 +402,25 @@ def audit_model(
         true_name = CLASS_NAMES[true_index]
         pred_name = CLASS_NAMES[pred_index]
         correct = true_index == pred_index
+        source_path, source_record_index = source_reference(raw_dataset, index)
+        saved_image = (
+            export_failure_image(
+                raw_dataset, failure_image_dir, index, true_name, pred_name
+            )
+            if export_images and not correct
+            else ""
+        )
         row = {
             "test_index": index,
             "image_id": f"cifar10_test_{index:05d}",
+            "source_path": source_path,
+            "source_record_index": source_record_index,
             "true_class": true_name,
             "predicted_class": pred_name,
             "confidence": confidence,
             "top1_correct": correct,
             "top5_correct": bool(top5_hit),
+            "saved_image": saved_image,
             "error_type": (
                 "correct"
                 if correct
@@ -396,21 +429,13 @@ def audit_model(
         }
         prediction_rows.append(row)
         if not correct:
-            failure = dict(row)
-            failure["saved_image"] = (
-                export_failure_image(
-                    raw_dataset, failure_image_dir, index, true_name, pred_name
-                )
-                if export_images
-                else ""
-            )
-            failure_rows.append(failure)
+            failure_rows.append(dict(row))
 
     write_csv(model_dir / "predictions_all.csv", prediction_rows)
     write_csv(
         model_dir / "failures.csv",
         failure_rows,
-        [*list(prediction_rows[0]), "saved_image"],
+        list(prediction_rows[0]),
     )
     write_matrix_csv(model_dir / "confusion_matrix_counts.csv", matrix)
     write_matrix_csv(model_dir / "confusion_matrix_normalized.csv", normalized)
@@ -444,6 +469,9 @@ def audit_model(
         "macro_precision": report["macro avg"]["precision"],
         "macro_recall": report["macro avg"]["recall"],
         "macro_f1": report["macro avg"]["f1-score"],
+        "weighted_precision": report["weighted avg"]["precision"],
+        "weighted_recall": report["weighted avg"]["recall"],
+        "weighted_f1": report["weighted avg"]["f1-score"],
         "parameters": sum(parameter.numel() for parameter in model.parameters()),
         "elapsed_seconds": time.perf_counter() - start,
         "note": note,
@@ -459,7 +487,7 @@ def audit_model(
     del model
     if device.type == "cuda":
         torch.cuda.empty_cache()
-    return summary
+    return summary, prediction_rows
 
 
 def main() -> None:
@@ -477,6 +505,7 @@ def main() -> None:
     output_root.mkdir(parents=True, exist_ok=True)
 
     summaries = []
+    predictions_by_model = {}
     errors = []
     audited_images = None
     for key in selected:
@@ -503,29 +532,51 @@ def main() -> None:
                 persistent_workers=args.num_workers > 0,
             )
             audited_images = len(loader.dataset)
-            summaries.append(
-                audit_model(
-                    spec,
-                    loader,
-                    raw_dataset,
-                    device,
-                    output_root,
-                    args.teacher_checkpoint,
-                    args.export_failure_images,
-                )
+            summary, prediction_rows = audit_model(
+                spec,
+                loader,
+                raw_dataset,
+                device,
+                output_root,
+                args.teacher_checkpoint,
+                args.export_failure_images,
             )
+            summaries.append(summary)
+            predictions_by_model[key] = prediction_rows
         except Exception as exc:
             errors.append({"model": key, "error": str(exc)})
             print(f"  ERROR: {exc}")
 
     if summaries:
         write_csv(output_root / "model_summary.csv", summaries)
+    combined_rows, transition_rows = build_cross_model_rows(
+        predictions_by_model,
+        TEACHER_STUDENT_PAIRS,
+    )
+    if combined_rows:
+        write_csv(output_root / "sample_comparison.csv", combined_rows)
+        write_csv(
+            output_root / "failed_by_three_or_more.csv",
+            [row for row in combined_rows if row["failed_three_or_more"]],
+            list(combined_rows[0]),
+        )
+        write_csv(
+            output_root / "failed_by_all_models.csv",
+            [row for row in combined_rows if row["failed_all_models"]],
+            list(combined_rows[0]),
+        )
+        write_csv(
+            output_root / "teacher_student_transitions.csv",
+            transition_rows,
+            list(combined_rows[0]),
+        )
     metadata = {
         "dataset": "CIFAR-10 official test split",
         "test_images": audited_images,
         "classes": CLASS_NAMES,
         "device": str(device),
         "selected_models": selected,
+        "teacher_student_pairs": TEACHER_STUDENT_PAIRS,
         "errors": errors,
         "teacher_warning": (
         "Legacy random-head pretrained-teacher runs are stored under runs/legacy/ "

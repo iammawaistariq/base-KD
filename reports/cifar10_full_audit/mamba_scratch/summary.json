@@ -1,0 +1,22 @@
+{
+  "model": "mamba_scratch",
+  "label": "Scratch-trained Mamba",
+  "checkpoint": "/home/tariq/Desktop/Awais-Tariq/base-KD/runs/cifar10_mamba_scratch/best.pt",
+  "valid_comparison": true,
+  "warning": "",
+  "test_images": 10000,
+  "correct": 8893,
+  "failures": 1107,
+  "accuracy_top1": 0.8893,
+  "accuracy_top5": 0.9942,
+  "cross_entropy_loss": 0.5542188196912408,
+  "macro_precision": 0.8888684448952731,
+  "macro_recall": 0.8892999999999999,
+  "macro_f1": 0.8890198303273265,
+  "weighted_precision": 0.8888684448952731,
+  "weighted_recall": 0.8893,
+  "weighted_f1": 0.8890198303273262,
+  "parameters": 1056010,
+  "elapsed_seconds": 35.35740151100072,
+  "note": "Vision Mamba trained directly on CIFAR-10."
+}

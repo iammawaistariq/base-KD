@@ -1,0 +1,37 @@
+{
+  "dataset": "CIFAR-10 official test split",
+  "test_images": 10000,
+  "classes": [
+    "airplane",
+    "automobile",
+    "bird",
+    "cat",
+    "deer",
+    "dog",
+    "frog",
+    "horse",
+    "ship",
+    "truck"
+  ],
+  "device": "cuda",
+  "selected_models": [
+    "vit_scratch",
+    "mamba_scratch",
+    "vit_pretrained_finetuned",
+    "mamba_kd_from_scratch_vit",
+    "mamba_kd_from_pretrained_vit"
+  ],
+  "teacher_student_pairs": {
+    "scratch_pair": [
+      "vit_scratch",
+      "mamba_kd_from_scratch_vit"
+    ],
+    "pretrained_pair": [
+      "vit_pretrained_finetuned",
+      "mamba_kd_from_pretrained_vit"
+    ]
+  },
+  "errors": [],
+  "teacher_warning": "Legacy random-head pretrained-teacher runs are stored under runs/legacy/ and are excluded from the standard audit.",
+  "error_semantics": "For a multiclass mistake true=A, predicted=B: the image is a false negative for A and a false positive for B."
+}

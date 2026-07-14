@@ -11,6 +11,7 @@ import torch
 
 from vim_kd.config import load_config
 from vim_kd.data.build import build_dataloaders
+from vim_kd.data.evaluation import evaluation_dataset_config
 from vim_kd.models.factory import build_model
 from vim_kd.utils.metrics import evaluate_classifier
 from vim_kd.utils.seed import resolve_device
@@ -45,6 +46,15 @@ def parse_args() -> argparse.Namespace:
         nargs=3,
         metavar=("NAME", "CONFIG", "CHECKPOINT"),
         help="Add a model to compare. Can be passed multiple times.",
+    )
+    parser.add_argument(
+        "--split",
+        choices=("test", "config"),
+        default="test",
+        help=(
+            "Evaluation split. 'test' uses the official CIFAR test set for every model; "
+            "'config' uses each config's validation_fraction setting (default: test)."
+        ),
     )
     return parser.parse_args()
 
@@ -81,35 +91,60 @@ def main() -> None:
     runs = args.run if args.run else DEFAULT_RUNS
 
     rows = []
-    val_loader = None
     device = None
     for name, config_path, checkpoint_path in runs:
         cfg = load_config(config_path)
         if device is None:
             device = resolve_device(cfg.get("device", "auto"))
-        if val_loader is None:
-            _, val_loader = build_dataloaders(cfg["dataset"])
+
+        dataset_cfg, split_label = evaluation_dataset_config(cfg["dataset"], args.split)
+        _, eval_loader = build_dataloaders(dataset_cfg)
+        sample_count = len(eval_loader.dataset)
 
         checkpoint = Path(checkpoint_path)
         if not checkpoint.exists():
-            rows.append((name, config_path, str(checkpoint), "missing", "-", "-", "-"))
+            rows.append(
+                (
+                    name,
+                    config_path,
+                    str(checkpoint),
+                    "missing",
+                    split_label,
+                    str(sample_count),
+                    "-",
+                    "-",
+                    "-",
+                )
+            )
             continue
 
         model = build_eval_model(cfg, checkpoint, device)
-        metrics = evaluate_classifier(model, val_loader, device)
+        metrics = evaluate_classifier(model, eval_loader, device)
         rows.append(
             (
                 name,
                 config_path,
                 str(checkpoint),
                 "ok",
+                split_label,
+                str(sample_count),
                 f"{count_parameters(model) / 1_000_000:.2f}",
                 f"{metrics['loss']:.4f}",
                 f"{metrics['acc1']:.2f}",
             )
         )
 
-    headers = ("model", "config", "checkpoint", "status", "params_m", "loss", "acc1")
+    headers = (
+        "model",
+        "config",
+        "checkpoint",
+        "status",
+        "split",
+        "samples",
+        "params_m",
+        "loss",
+        "acc1",
+    )
     widths = [len(header) for header in headers]
     for row in rows:
         widths = [max(width, len(value)) for width, value in zip(widths, row)]

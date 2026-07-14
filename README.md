@@ -147,6 +147,16 @@ Compare whichever checkpoints already exist:
 python scripts/compare_models.py
 ```
 
+The comparison command evaluates every CIFAR checkpoint on the official test
+set while retaining the normalization from that checkpoint's config. This is
+the final, apples-to-apples result. It prints the split and sample count beside
+each score. To inspect the validation split selected by each training config
+instead, run:
+
+```bash
+python scripts/compare_models.py --split config
+```
+
 Create final CIFAR-10 test reports:
 
 ```bash
@@ -222,7 +232,7 @@ Outputs are stored separately in:
 
 ## Full CIFAR-10 test audit
 
-Evaluate all four model entries on the official unseen 10,000-image CIFAR-10 test
+Evaluate all five model entries on the official unseen 10,000-image CIFAR-10 test
 split:
 
     python scripts/analyze_cifar10.py --device auto
@@ -231,7 +241,14 @@ Reports are written to reports/cifar10_audit/. Each model receives count and
 row-normalized confusion matrices in CSV and PNG form, per-class precision,
 recall, F1, TP, FP, FN, and TN counts, a CSV row for every test image, and a
 failures-only CSV. Every row includes the stable CIFAR test index, true class,
-predicted class, confidence, and error interpretation.
+predicted class, confidence, source record, exported failure-image path, and
+error interpretation.
+
+The audit root also contains `sample_comparison.csv`, with every model's result
+on the same image, and filtered CSVs for images failed by three or more models,
+images failed by all selected models, and teacher/student transitions. The
+transition columns separately identify teacher failures recovered by the
+student and teacher successes lost by the student.
 
 For a mistake whose true class is cat and prediction is dog, the same image is a
 false negative for cat and a false positive for dog. To also save the original

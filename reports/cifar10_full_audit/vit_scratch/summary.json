@@ -1,0 +1,22 @@
+{
+  "model": "vit_scratch",
+  "label": "Scratch-trained compact ViT",
+  "checkpoint": "/home/tariq/Desktop/Awais-Tariq/base-KD/runs/cifar10_vit_scratch/best.pt",
+  "valid_comparison": true,
+  "warning": "",
+  "test_images": 10000,
+  "correct": 8077,
+  "failures": 1923,
+  "accuracy_top1": 0.8077,
+  "accuracy_top5": 0.9841,
+  "cross_entropy_loss": 0.9497359416723251,
+  "macro_precision": 0.8068497731395292,
+  "macro_recall": 0.8077,
+  "macro_f1": 0.8069069381634317,
+  "weighted_precision": 0.8068497731395293,
+  "weighted_recall": 0.8077,
+  "weighted_f1": 0.8069069381634316,
+  "parameters": 2857162,
+  "elapsed_seconds": 6.384031531999426,
+  "note": "Compact ViT trained directly on CIFAR-10."
+}
